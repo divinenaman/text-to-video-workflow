@@ -54,42 +54,42 @@ A 15-minute recorded deep-dive into the entire production workflow, from initial
 
 ```mermaid
 flowchart TD
-    subgraph Client & Direction
-        User[Creator / Recruiter]
-        Agent[🤖 Google ADK Creative Director\nGemini 3 Flash]
-        User <-->|Co-Authors Screenplay| Agent
+    subgraph ClientDirection["Client and Direction"]
+        User["Creator / Recruiter"]
+        Agent["Google ADK Creative Director (Gemini 3 Flash)"]
+        User --- Agent
     end
 
-    subgraph Agentic Tooling
-        MCP[FastMCP SSE Server\nport 8000]
-        Agent <-->|Model Context Protocol| MCP
+    subgraph AgenticTooling["Agentic Tooling"]
+        MCP["FastMCP SSE Server (Port 8000)"]
+        Agent --- MCP
     end
 
-    subgraph Core Engine
-        API[Flask REST API\nport 5000]
-        MCP -->|HTTP / Internal RPC| API
-        Valkey[(Valkey / Redis\nDistributed Session Locks)]
-        DB[(PostgreSQL + pgvector\nIdeas, Drafts, Cast Bibles)]
-        API <--> Valkey
-        API <--> DB
+    subgraph CoreEngine["Core Engine"]
+        API["Flask REST API (Port 5000)"]
+        MCP --> API
+        Valkey[("Valkey / Redis (Distributed Session Locks)")]
+        DB[("PostgreSQL + pgvector (Ideas, Drafts, Bibles)")]
+        API --- Valkey
+        API --- DB
     end
 
-    subgraph 5-Stage Production Pipeline
-        S0[Stage 0: Screenplay Negotiation & Blueprint]
-        S1[Stage 1: Soundscape & TTS Synthesis - ElevenLabs]
-        S2[Stage 2: Aesthetic Sref & Visual Prompting]
-        S3[Stage 3: 16-Panel Locked Grid Storyboard Audit]
-        S4[Stage 4: Remotion / Video Render & Upscaling]
+    subgraph Pipeline["5-Stage Production Pipeline"]
+        S0["Stage 0: Screenplay Blueprint"]
+        S1["Stage 1: Soundscape and TTS (ElevenLabs)"]
+        S2["Stage 2: Aesthetic Sref and Visuals"]
+        S3["Stage 3: 16-Panel Grid Storyboard Audit"]
+        S4["Stage 4: Remotion / Video Render and Upscaling"]
         S0 --> S1 --> S2 --> S3 --> S4
     end
 
     API --> S0
-    S4 --> Output[Final Cinematic MP4 + Webhook Delivery]
+    S4 --> Output["Final Cinematic MP4 and Webhook"]
 
-    subgraph Observability
-        FB[Fluent-Bit Log Shipper]
-        NR[New Relic APM]
-        S3Storage[Linode S3 Object Storage]
+    subgraph Observability["Observability"]
+        FB["Fluent-Bit Log Shipper"]
+        NR["New Relic APM"]
+        S3Storage["Linode S3 Object Storage"]
         API -.-> FB
         FB --> NR
         FB --> S3Storage
