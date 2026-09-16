@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Storyboard | BAASHA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg: #090d16;
+            --surface: rgba(17, 24, 39, 0.5);
+            --border: rgba(255, 255, 255, 0.08);
+            --accent: #8b5cf6;
+            --accent-glow: rgba(139, 92, 246, 0.4);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 45%);
+            font-family: 'Inter', sans-serif;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            padding: 1.5rem;
+        }
+
+        .studio-container {
+            width: 100%;
+            max-width: 680px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2.5rem;
+            animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .brand {
+            text-align: center;
+        }
+
+        .brand-logo {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: linear-gradient(135deg, #f8fafc 30%, #a78bfa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .brand-subtitle {
+            font-size: 1rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Central Prompting Workspace */
+        .prompt-card {
+            width: 100%;
+            background: var(--surface);
+            backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .prompt-card:focus-within {
+            border-color: rgba(139, 92, 246, 0.4);
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(139, 92, 246, 0.3);
+        }
+
+        .textarea-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .prompt-textarea {
+            width: 100%;
+            height: 120px;
+            background: transparent;
+            border: none;
+            outline: none;
+            resize: none;
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            font-size: 1.05rem;
+            line-height: 1.6;
+            padding-right: 3.5rem;
+        }
+
+        .prompt-textarea::placeholder {
+            color: rgba(148, 163, 184, 0.6);
+        }
+
+        /* Send / Sparkle Button inside prompt box */
+        .send-btn {
+            position: absolute;
+            bottom: 0px;
+            right: 0px;
+            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+            color: white;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 16px -4px rgba(139, 92, 246, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px -4px rgba(139, 92, 246, 0.5);
+        }
+
+        .send-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Config Accordion styling */
+        .config-accordion {
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+            overflow: hidden;
+            background: rgba(15, 23, 42, 0.3);
+            width: 100%;
+            transition: all 0.3s;
+            display: none; /* Hidden by default for Low/Medium presets */
+        }
+
+        .accordion-header {
+            padding: 0.85rem 1.25rem;
+            background: rgba(30, 41, 59, 0.2);
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            transition: color 0.2s, background 0.2s;
+        }
+
+        .accordion-header:hover {
+            background: rgba(30, 41, 59, 0.35);
+            color: var(--text-main);
+        }
+
+        .accordion-content {
+            padding: 1.25rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.03);
+            max-height: 400px;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden;
+        }
+
+        .accordion-content.collapsed {
+            max-height: 0;
+            padding: 0 1.25rem;
+            border-top: none;
+        }
+
+        @media (max-width: 600px) {
+            .accordion-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .field-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .field-input, .field-select {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.6rem 0.85rem;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.2s;
+            width: 100%;
+        }
+
+        .field-input:focus, .field-select:focus {
+            border-color: var(--accent);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            user-select: none;
+            margin-top: 0.75rem;
+        }
+
+        .checkbox-group input {
+            cursor: pointer;
+            width: 15px;
+            height: 15px;
+            accent-color: var(--accent);
+        }
+
+        .checkbox-label {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+        }
+
+        /* Full Screen Overlay Loader */
+        .overlay-loader {
+            position: fixed;
+            inset: 0;
+            background: #060911;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .overlay-loader.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .ring-spinner {
+            width: 64px;
+            height: 64px;
+            border: 3px solid rgba(139, 92, 246, 0.1);
+            border-radius: 50%;
+            border-top-color: var(--accent);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-status {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            color: var(--text-main);
+            height: 24px;
+            text-align: center;
+        }
+        /* BYOP Card Premium Enhancements */
+        .byop-card:focus-within {
+            border-color: rgba(139, 92, 246, 0.4) !important;
+        }
+
+        .switch input:checked + .slider {
+            background-color: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+        }
+
+        .switch input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+
+        .byop-reset-btn:hover {
+            opacity: 1 !important;
+            color: #a78bfa !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="studio-container">
+        <div class="brand">
+            <h1 class="brand-logo">BAASHA</h1>
+            <p class="brand-subtitle">Automated Multi-Modal Storyboard Creator</p>
+        </div>
+
+        <div class="prompt-card">
+            <div class="textarea-wrapper">
+                <textarea class="prompt-textarea" id="story-input" placeholder="What story do you want to create? (e.g. re-create the slumdog millionaire scene with dialogues)..." autofocus></textarea>
+                <button class="send-btn" id="send-btn" onclick="submitPrompt()">
+                    <i data-lucide="sparkles" style="width: 20px; height: 20px;"></i>
+                </button>
+            </div>
+            <!-- Preset Selector Group -->
+            <div class="preset-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04);">
+                <label class="field-label" style="margin: 0;">Generation Preset</label>
+                <select class="field-select" id="cfg-preset" onchange="onPresetChange()" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem; background: rgba(15, 23, 42, 0.8);">
+                    <option value="low" selected>Low Fidelity</option>
+                    <option value="medium">Medium Fidelity</option>
+                    <option value="custom">Custom Parameters</option>
+                </select>
+            </div>
+
+            <!-- Workflow Mode Selector -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04);">
+                <label class="field-label" style="margin: 0; color: #38bdf8;">Workflow Mode</label>
+                <select class="field-select" id="workflow-mode" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem; background: rgba(15, 23, 42, 0.8); border-color: rgba(56, 189, 248, 0.3);">
+                    <option value="auto" selected>Auto (One-Shot Cinematic Generation)</option>
+                    <option value="review">Review Driven (Multi-Stage Director Studio)</option>
+                </select>
+            </div>
+            <!-- Preset Info Badge -->
+            <div id="preset-info-badge" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; padding: 0.65rem 1rem; border-radius: 12px; background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255,255,255,0.06); font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                <!-- Dynamic text populated by JS -->
+            </div>
+        </div>
+
+        <!-- Bring Your Own Prompts (BYOP) Glassmorphic Card -->
+        <div class="byop-card" style="width: 100%; background: var(--surface); backdrop-filter: blur(24px); border: 1px solid var(--border); border-radius: 24px; padding: 1.5rem; box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8); display: flex; flex-direction: column; gap: 1.25rem; transition: border-color 0.3s, box-shadow 0.3s;">
+            <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;" onclick="toggleBYOP()">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(139, 92, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent);">
+                        <i data-lucide="sliders" style="width: 18px; height: 18px;"></i>
+                    </div>
+                    <div style="text-align: left;">
+                        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #f8fafc 60%, #a78bfa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Customize Pipeline Prompts</h3>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem;">Bring your own custom prompt templates (BYOP)</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <label class="switch" style="position: relative; display: inline-block; width: 44px; height: 24px; margin: 0;" onclick="event.stopPropagation()">
+                        <input type="checkbox" id="byop-enable" onchange="onBYOPToggle()" style="opacity: 0; width: 0; height: 0;">
+                        <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: rgba(255,255,255,0.08); border: 1px solid var(--border); transition: .3s; border-radius: 24px;"></span>
+                    </label>
+                    <i data-lucide="chevron-down" id="byop-arrow" style="width: 16px; height: 16px; color: var(--text-muted); transition: transform 0.25s;"></i>
+                </div>
+            </div>
+
+            <div id="byop-content" style="max-height: 0; overflow: hidden; transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; gap: 1.25rem;">
+                <div style="padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04); display: flex; flex-direction: column; gap: 1.25rem; text-align: left;">
+                    <!-- Screenplay Override -->
+                    <div class="field-group">
+                        <div style="display: flex; align-items: center; justify-content: justify-content; margin-bottom: 0.2rem; justify-content: space-between;">
+                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">1. Creative Screenplay Prompt</label>
+                            <button class="byop-reset-btn" onclick="resetBYOP('screenplay')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls character depth, dialogues, pacing and story-splits. We'll automatically append the strict pipeline JSON formatting spec.</p>
+                        <textarea class="field-input" id="byop-screenplay" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                    </div>
+
+                    <!-- Character Generation Override -->
+                    <div class="field-group">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
+                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">2. Character Casting & Bible Prompt</label>
+                            <button class="byop-reset-btn" onclick="resetBYOP('character')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls character visual extraction, chronological attire locking, and portrait style conversion. We'll automatically append the pipeline JSON structure.</p>
+                        <textarea class="field-input" id="byop-character" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                    </div>
+
+                    <!-- Grid Override -->
+                    <div class="field-group">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
+                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">3. Storyboard Grid Prompt</label>
+                            <button class="byop-reset-btn" onclick="resetBYOP('grid')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls panel continuity, multi-layered visual Z-blocking, camera setups, and headroom. We'll automatically append the panels list.</p>
+                        <textarea class="field-input" id="byop-grid" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                    </div>
+
+                    <!-- Judge Override -->
+                    <div class="field-group">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
+                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">4. Visual Continuity Judge Prompt</label>
+                            <button class="byop-reset-btn" onclick="resetBYOP('judge')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Instructs the Vision LLM Judge how to audit storyboard assets for identity, costumes, props, and temporal drift.</p>
+                        <textarea class="field-input" id="byop-judge" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="config-accordion">
+            <div class="accordion-header" onclick="toggleAccordion()">
+                <span>Advanced Parameters</span>
+                <i data-lucide="chevron-down" id="accordion-arrow" style="width: 14px; height: 14px; transition: transform 0.25s;"></i>
+            </div>
+            <div class="accordion-content collapsed" id="accordion-content">
+                <div class="field-group">
+                    <label class="field-label">Idea ID</label>
+                    <input type="text" class="field-input" id="cfg-idea-id" placeholder="Auto-generated if blank">
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Image Engine</label>
+                    <select class="field-select" id="cfg-img-engine">
+                        <option value="fal/z-image" selected>fal/z-image</option>
+                        <option value="fal/gpt">fal/gpt</option>
+                        <option value="fal/sd">fal/sd</option>
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Voice ID</label>
+                    <select class="field-select" id="cfg-voice-id">
+                        <option value="gtts" selected>GTTS (Standard Audio)</option>
+                        <option value="Fenrir">Fenrir (Premium UGC)</option>
+                    </select>
+                </div>
+                <div class="field-group" style="grid-column: span 2;">
+                    <!-- Spacer since Workflow Mode moved out -->
+                </div>
+                <div class="field-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="cfg-use-grid" checked>
+                        <span class="checkbox-label">Use One-Shot Image Grid</span>
+                    </label>
+                </div>
+                <div class="field-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="cfg-judge-grids" checked>
+                        <span class="checkbox-label">Enable Vision LLM Judge</span>
+                    </label>
+                </div>
+                <div class="field-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="cfg-upscale-crops" checked>
+                        <span class="checkbox-label">Upscale Grid Crops</span>
+                    </label>
+                </div>
+                <div class="field-group" style="grid-column: span 2;">
+                    <label class="field-label">Style Reference URL</label>
+                    <input type="text" class="field-input" id="cfg-style-ref" value="https://tempp.us-east-1.linodeobjects.com/Screenshot%20from%202026-04-30%2004-59-08.png" readonly style="opacity: 0.6; cursor: not-allowed;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Screen Transition Overlay -->
+    <div class="overlay-loader" id="overlay-loader">
+        <div class="ring-spinner"></div>
+        <div class="loader-status" id="loader-status">Initializing creative pipeline...</div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Set default UUID
+        document.getElementById('cfg-idea-id').value = generateUUID();
+
+        function toggleAccordion() {
+            const content = document.getElementById('accordion-content');
+            const arrow = document.getElementById('accordion-arrow');
+            content.classList.toggle('collapsed');
+            if (content.classList.contains('collapsed')) {
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+
+        const DEFAULT_STYLE_REF = "https://tempp.us-east-1.linodeobjects.com/Screenshot%20from%202026-04-30%2004-59-08.png";
+
+        function onPresetChange() {
+            const preset = document.getElementById('cfg-preset').value;
+            const accordion = document.querySelector('.config-accordion');
+            const accordionContent = document.getElementById('accordion-content');
+            const arrow = document.getElementById('accordion-arrow');
+            const badge = document.getElementById('preset-info-badge');
+            const styleRefInput = document.getElementById('cfg-style-ref');
+
+            if (preset === 'low') {
+                document.getElementById('cfg-img-engine').value = 'fal/gpt';
+                document.getElementById('cfg-judge-grids').checked = false;
+                document.getElementById('cfg-upscale-crops').checked = false;
+                document.getElementById('cfg-voice-id').value = 'gtts';
+
+                // Reset style ref and make read-only
+                styleRefInput.value = DEFAULT_STYLE_REF;
+                styleRefInput.readOnly = true;
+                styleRefInput.style.opacity = "0.6";
+                styleRefInput.style.cursor = "not-allowed";
+
+                // Hide or collapse the config parameters for Low preset
+                accordionContent.classList.add('collapsed');
+                arrow.style.transform = 'rotate(0deg)';
+                accordion.style.display = 'none';
+
+                // Populate badge
+                badge.style.display = 'flex';
+                badge.innerHTML = `<i data-lucide="info" style="width: 14px; height: 14px; color: var(--accent); flex-shrink: 0;"></i><span>Active config: <strong>fal/gpt</strong> image engine, <strong>gtts</strong> voice, <strong>LLM Judge & Upscale disabled</strong>.</span>`;
+            } else if (preset === 'medium') {
+                document.getElementById('cfg-img-engine').value = 'fal/gpt';
+                document.getElementById('cfg-judge-grids').checked = true;
+                document.getElementById('cfg-upscale-crops').checked = true;
+                document.getElementById('cfg-voice-id').value = 'Fenrir';
+
+                // Reset style ref and make read-only
+                styleRefInput.value = DEFAULT_STYLE_REF;
+                styleRefInput.readOnly = true;
+                styleRefInput.style.opacity = "0.6";
+                styleRefInput.style.cursor = "not-allowed";
+
+                // Hide or collapse the config parameters for Medium preset
+                accordionContent.classList.add('collapsed');
+                arrow.style.transform = 'rotate(0deg)';
+                accordion.style.display = 'none';
+
+                // Populate badge
+                badge.style.display = 'flex';
+                badge.innerHTML = `<i data-lucide="info" style="width: 14px; height: 14px; color: var(--accent); flex-shrink: 0;"></i><span>Active config: <strong>fal/gpt</strong> image engine, <strong>Fenrir</strong> voice, <strong>LLM Judge & Upscale enabled</strong>.</span>`;
+            } else if (preset === 'custom') {
+                // Custom starts with Low defaults
+                document.getElementById('cfg-img-engine').value = 'fal/gpt';
+                document.getElementById('cfg-judge-grids').checked = false;
+                document.getElementById('cfg-upscale-crops').checked = false;
+                document.getElementById('cfg-voice-id').value = 'gtts';
+
+                // Make style ref editable
+                styleRefInput.readOnly = false;
+                styleRefInput.style.opacity = "1";
+                styleRefInput.style.cursor = "text";
+
+                // Make accordion visible and expand it!
+                accordion.style.display = 'block';
+                accordionContent.classList.remove('collapsed');
+                arrow.style.transform = 'rotate(180deg)';
+
+                // Hide badge
+                badge.style.display = 'none';
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        const DEFAULT_PROMPTS = {
+            screenplay: `### Objective:
+Create a cinematic micro-drama screenplay for a {CONTENT_TYPE} video about - {STORY}. You are the writer and director. Elevate the user's input—whether it is a raw idea, overall plot, or scene breakdown—into a highly compelling, beautifully structured cinematic story.
+
+### DIRECTORIAL STORYTELLING & PACING SPEC:
+1. **INPUT ADAPTATION (DIRECTORIAL INTEGRITY)**: Preserve the core narrative arc. Expand raw ideas into a compelling human struggle (3-Act structure) featuring distinct, relatable characters.
+2. **PERFECT CINEMATIC PACING & SILENCE**: Rhythmic pacing is critical. Alternate dialogue shots with deliberate silent action beats focusing on micro-expressions, props, or environmental depth.
+3. **AUTHENTIC HUMOR & HUMAN RELATABILITY**: Infuse organic situational irony, dry humor, awkward silences, or understated witty banter. Keep the voice realistic, vulnerable, and raw.`,
+
+            grid: `### NARRATIVE ARC GENERATION PROTOCOL
+Generate a grid representing a continuous cinematic sequence that captures a substantive visual arc. The panels must be usable as keyframes for a 1-minute video take.
+
+### SPATIAL & COMPOSITION CONSTRAINTS (CRITICAL):
+1. **SPATIAL ANCHORING & FREE CAMERA**: The panels represent different cinematic camera setups within highly detailed physical spaces. If multiple panels share the same Location, maintain perfect architectural geometry and lighting continuity.
+2. **OBJECT PERMANENCE & PROPS**: DO NOT invent large furniture unless explicitly requested. Do not randomly add props mid-scene.
+3. **WARDROBE & POSTURE**: Strictly lock each character's clothing, hairstyle, and physical build across ALL panels. Maintain realistic anatomical postures.
+4. **DYNAMIC CROWDS**: Specify the exact number of background extras (e.g., 'three people'), their exact relative positions, diverse facial features, distinct clothing, and expressions.
+5. **NO SPLIT SCREENS**: Each panel MUST be a single cinematic frame. Absolutely no diagonal dividers or comic-book dividers.
+6. **CHARACTER CONTINUITY & NAMING**: Enclose character names in brackets with explicit referential metadata describing their current state (e.g., '[John, sitting on the left side, looking angry]').`,
+
+            judge: `### Role: You are a professional 'Script Supervisor', 'Visual Continuity Director', and 'Forensic Spatial Auditor' for a high-end film production.
+
+### Objective:
+Analyze the provided storyboard grid image and its corresponding story script. Your goal is to identify 'Continuity Drift', 'Spatial Anomalies', 'Anatomical Hallucinations', and 'Format Violations' across the panels.
+
+### Audit Criteria (Forensic Breakdown):
+1. **Character Identity, Physicality & Costume Grounding:** Do all physical traits (hair color/style, skin tone, eye color), wardrobe (jacket, shirt, patterns), footwear, and accessories (eyewear, watches, belts) remain strictly locked and identical across all panel appearances?
+2. **Object Permanence & Spatial Geometry:** Does the depth perspective make sense? Do random props suddenly pop in or disappear in panels set in the same location?
+3. **Anatomical Micro-Details:** Look closely at faces and bodies. Are there fused fingers, distorted facial features, or extra limbs?
+4. **Lighting, White Tone & Temporal Consistency:** Does the time of day, shadows, or lighting temperature change? White balance must remain perfectly identical across all panels.`,
+
+            character: `Task: Perform 'Deep Casting' and 'Visual Bible' extraction for the story.
+
+### CRITICAL CASTING PROTOCOLS:
+1. **CHRONOLOGICAL VARIATIONS**: If a character matures, ages, or undergoes a significant physical transition, list them as separate, distinct entries.
+2. **COSTUME & ATTIRE**: Describe specific clothing material, era-appropriate styles, colors, and accessories matching their status and current emotional state.
+3. **VISUAL DNA**: Specify unique facial features, skin texture, ethnicity, eye color, and hair architecture. Avoid generic descriptors.
+4. **VOICE CASTING**: Provide a rich, detailed voice description capturing their tone, texture, speed, pitch, and accent details.`
+        };
+
+        // Pre-fill textareas on load
+        document.getElementById('byop-screenplay').value = DEFAULT_PROMPTS.screenplay;
+        document.getElementById('byop-character').value = DEFAULT_PROMPTS.character;
+        document.getElementById('byop-grid').value = DEFAULT_PROMPTS.grid;
+        document.getElementById('byop-judge').value = DEFAULT_PROMPTS.judge;
+
+        let byopExpanded = false;
+        function toggleBYOP() {
+            const content = document.getElementById('byop-content');
+            const arrow = document.getElementById('byop-arrow');
+            byopExpanded = !byopExpanded;
+            if (byopExpanded) {
+                content.style.maxHeight = "1000px";
+                arrow.style.transform = 'rotate(180deg)';
+            } else {
+                content.style.maxHeight = "0";
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function onBYOPToggle() {
+            const isEnabled = document.getElementById('byop-enable').checked;
+            const card = document.querySelector('.byop-card');
+
+            if (isEnabled) {
+                card.style.borderColor = "var(--accent)";
+                card.style.boxShadow = "0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(139, 92, 246, 0.2)";
+
+                // Automatically expand when enabled
+                if (!byopExpanded) {
+                    toggleBYOP();
+                }
+            } else {
+                card.style.borderColor = "var(--border)";
+                card.style.boxShadow = "0 30px 60px -15px rgba(0, 0, 0, 0.8)";
+            }
+        }
+
+        function resetBYOP(type) {
+            event.stopPropagation();
+            if (DEFAULT_PROMPTS[type]) {
+                document.getElementById(`byop-${type}`).value = DEFAULT_PROMPTS[type];
+            }
+        }
+
+        // Initialize preset
+        onPresetChange();
+
+        let activeOverrideName = null;
+        let originalOverrideData = null;
+
+        // Check for override in URL path (e.g. /create/override/director_cut)
+        const pathParts = window.location.pathname.split('/');
+        const overrideIndex = pathParts.indexOf('override');
+        if (overrideIndex !== -1 && pathParts[overrideIndex + 1]) {
+            const overrideName = pathParts[overrideIndex + 1];
+            activeOverrideName = overrideName;
+            fetch(`/static/override/${overrideName}.json`)
+                .then(res => {
+                    if (!res.ok) throw new Error("Override file not found");
+                    return res.json();
+                })
+                .then(data => {
+                    originalOverrideData = data;
+                    // Enable BYOP toggle
+                    document.getElementById('byop-enable').checked = true;
+                    onBYOPToggle();
+
+                    // Populate overrides
+                    if (data.screenplay) {
+                        document.getElementById('byop-screenplay').value = data.screenplay;
+                    }
+                    if (data.character) {
+                        document.getElementById('byop-character').value = data.character;
+                    }
+                    if (data.grid) {
+                        document.getElementById('byop-grid').value = data.grid;
+                    }
+                    if (data.judge) {
+                        document.getElementById('byop-judge').value = data.judge;
+                    }
+
+                    // Show premium glassmorphic alert notification
+                    const alertDiv = document.createElement('div');
+                    alertDiv.style = "position: fixed; top: 20px; right: 20px; background: rgba(139, 92, 246, 0.9); backdrop-filter: blur(12px); border: 1px solid var(--accent); border-radius: 12px; padding: 1rem; color: white; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; transition: opacity 0.5s;";
+                    alertDiv.innerHTML = `<i data-lucide="sparkles" style="width: 16px; height: 16px;"></i> Loaded prompt overrides: <strong>${overrideName}</strong>`;
+                    document.body.appendChild(alertDiv);
+                    if (window.lucide) lucide.createIcons();
+                    setTimeout(() => {
+                        alertDiv.style.opacity = '0';
+                        setTimeout(() => alertDiv.remove(), 500);
+                    }, 4000);
+                })
+                .catch(err => {
+                    console.warn("Could not load overrides:", err);
+                });
+        }
+
+        const statusMessages = [
+            "Initializing creative pipeline...",
+            "Structuring narrative frames...",
+            "Orchestrating multi-modal generation...",
+            "Routing to storyboard studio..."
+        ];
+
+        function animateStatusText() {
+            const statusEl = document.getElementById('loader-status');
+            let idx = 0;
+            setInterval(() => {
+                idx = (idx + 1) % statusMessages.length;
+                statusEl.style.opacity = 0;
+                setTimeout(() => {
+                    statusEl.textContent = statusMessages[idx];
+                    statusEl.style.opacity = 1;
+                }, 300);
+            }, 1000);
+        }
+
+        async function submitPrompt() {
+            const storyVal = document.getElementById('story-input').value.trim();
+            if (!storyVal) {
+                alert("Please write a story prompt first.");
+                return;
+            }
+
+            // Enable transition screen
+            const loader = document.getElementById('overlay-loader');
+            loader.classList.add('active');
+            animateStatusText();
+
+            // Load settings
+            const ideaId = document.getElementById('cfg-idea-id').value.trim() || generateUUID();
+            const imgEngine = document.getElementById('cfg-img-engine').value;
+            const voiceId = document.getElementById('cfg-voice-id').value;
+
+            const mode = document.getElementById('workflow-mode').value;
+            const stopStage = (mode === 'review') ? 0 : 4;
+
+            const useGrid = document.getElementById('cfg-use-grid').checked;
+            const judgeGrids = document.getElementById('cfg-judge-grids').checked;
+            const upscaleCrops = document.getElementById('cfg-upscale-crops').checked;
+            const styleRef = document.getElementById('cfg-style-ref').value.trim() || DEFAULT_STYLE_REF;
+            const styleRefs = [styleRef];
+
+            // Compile payload
+            const payload = {
+                idea_id: ideaId,
+                image_engine: imgEngine,
+                story: storyVal,
+                title: storyVal.substring(0, 30) + "...",
+                content_type: "viral short form social media content",
+                style_reference_urls: styleRefs,
+                gen_video_conf: "v4",
+                voice_id: voiceId,
+                avatar_engine: "lemon_slice",
+                use_character_refs: true,
+                use_image_grid: useGrid,
+                stop_at_stage: stopStage,
+                judge_grids: judgeGrids,
+                upscale_grid_crops: upscaleCrops
+            };
+
+            // Custom dynamic prompt overrides if enabled
+            if (document.getElementById('byop-enable').checked) {
+                const currentOverrides = {
+                    screenplay: document.getElementById('byop-screenplay').value.trim(),
+                    character: document.getElementById('byop-character').value.trim(),
+                    grid: document.getElementById('byop-grid').value.trim(),
+                    judge: document.getElementById('byop-judge').value.trim()
+                };
+
+                // If loaded from a file and unmodified, send the filename to avoid DB bloat
+                if (activeOverrideName && originalOverrideData &&
+                    currentOverrides.screenplay === (originalOverrideData.screenplay || "").trim() &&
+                    currentOverrides.character === (originalOverrideData.character || "").trim() &&
+                    currentOverrides.grid === (originalOverrideData.grid || "").trim() &&
+                    currentOverrides.judge === (originalOverrideData.judge || "").trim()) {
+
+                    payload.prompt_overrides = activeOverrideName;
+                } else {
+                    payload.prompt_overrides = currentOverrides;
+                }
+            }
+
+            try {
+                const response = await fetch('/draft', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.message || "Failed to trigger generation");
+                }
+
+                // Redirect to the unified hybrid viewer/editor
+                setTimeout(() => {
+                    window.location.href = `/stages?idea_id=${ideaId}&version=1`;
+                }, 2000);
+
+            } catch (err) {
+                loader.classList.remove('active');
+                alert(`Error: ${err.message}`);
+            }
+        }
+
+        // Support triggering on 'Enter' key inside textarea (without shift)
+        document.getElementById('story-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitPrompt();
+            }
+        });
+    </script>
+</body>
+</html>

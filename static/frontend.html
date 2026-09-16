@@ -1,0 +1,74 @@
+<html>
+
+<head>
+    <style>
+        input {
+            width: 100%;
+            height: 60px;
+        }
+
+
+        #container {
+            display: grid;
+            grid-template-columns: auto auto auto;
+            padding: 10px;
+        }
+
+        #container>iframe {
+            margin: 20px;
+        }
+    </style>
+</head>
+
+<body bgcolor="floralwhite">
+    <h1>Videos by BaashaLive</h1>
+    <form id="form">
+        <input id="link" name="0" type="text" placeholder="Enter Link" />
+        <input type="submit" value="Open" />
+    </form>
+    <div id="container"></div>
+</body>
+<script>
+    window.app = "http://45.79.142.216:3000"
+    // http://173.255.237.181:3000
+
+    const links =
+        [["Fatest growing shoe company! (ON)", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/b07a4f89-828b-4714-89a0-697bbe7c69ac.json"]
+            , ["Most underrated tech found! (Pavel)", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/499abc2b-ebc4-4a32-acfb-bb2f7be2a548.json"]
+            , ["Two sports!", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/4040262f-cc18-49c7-bd24-0e2614b13215.json"]
+            , ["Mushroom coffee!", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/687a1caf-3bfd-4096-8fa0-8642b9389a3d.json"]
+            , ["Financial secret by religions", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/3f493ae8-7876-4ed2-aa07-583c095a9f4f.json"]
+            , ["Airbnb", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/77b53079-b8b7-4442-aaed-e67fb6f9d25c.json"]
+            , ["Pablo Picasso", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/87ce4451-29c9-4f96-b331-54304e30e145.json"]
+            , ["Saudi crown price", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/7cd17bb7-4b61-44fd-a7fc-14ed7ef2f630.json"]
+            , ["Tattoos", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/dd41f985-917e-42f2-bd5b-bd622f80a108.json"]
+            , ["Singapore of africa", "https://baasha-assets.us-east-1.linodeobjects.com/video-configs/961b0ea1-4d91-4ff4-bd38-309cd6720fe6.json"]
+        ]
+
+    const container = document.getElementById("container");
+
+    for (const [t, l] of links) {
+        if (l) {
+            const f = document.createElement("a");
+            f.href = `${window.app}?c=${btoa(l)}`;
+            f.innerHTML = t;
+            f.targed = "_blank";
+
+            container.appendChild(f);
+        }
+    }
+
+    const f = document.getElementById("form")
+    function formSubmit(e) {
+        e.preventDefault()
+        const node = document.getElementById("link")
+        if (node.value) {
+            const link = `${window.app}?c=${btoa(node.value)}`
+            window.open(link, '_blank');
+        }
+    }
+
+    f.addEventListener("submit", (e) => formSubmit(e))
+</script>
+
+</html>

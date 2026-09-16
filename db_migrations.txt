@@ -1,0 +1,22 @@
+ALTER TABLE drafts ADD COLUMN generated_video text;
+ALTER TABLE ideas ADD COLUMN user_id varchar(300);
+ALTER TABLE drafts ADD COLUMN character_ref text;
+ALTER TABLE drafts ADD COLUMN stage integer;
+ALTER TABLE drafts ADD style_id integer, ADD CONSTRAINT style_fk FOREIGN KEY(style_id) REFERENCES styles(id);
+ALTER TABLE voices ADD COLUMN tts_toolkit varchar(200) NOT NULL DEFAULT 'eleven_labs';
+
+ALTER TABLE background_music ADD COLUMN transition boolean NOT NULL DEFAULT false;
+
+# sudo apt install postgresql-16-pgvector
+CREATE EXTENSION vector;
+ALTER TABLE background_music ADD COLUMN embedding vector(384);
+
+ALTER TABLE drafts ADD COLUMN target_stage integer NOT NULL DEFAULT -1;
+ALTER TABLE drafts ADD COLUMN stage_updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+ALTER TABLE drafts ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+# episode changes
+ALTER TABLE ideas ADD COLUMN is_series BOOLEAN DEFAULT FALSE;
+ALTER TABLE ideas ADD COLUMN episode_breakdown JSONB;
+ALTER TABLE drafts ADD COLUMN episode_index INTEGER;
+ALTER TABLE drafts ADD COLUMN style_reference_urls TEXT[];

@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baasha | Continuity Audit</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #fcfcfc;
+            --sidebar-bg: #ffffff;
+            --text-primary: #000000;
+            --text-secondary: #5a5a5a;
+            --text-dim: #999999;
+            --border-color: #eeeeee;
+            --border-bold: #000000;
+            --accent: #000000;
+            --sidebar-width: 340px;
+            --font-ui: 'Inter', sans-serif;
+            --font-display: 'Space Grotesk', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            min-height: 100vh;
+        }
+
+        .dashboard-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 40px 24px;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header { margin-bottom: 48px; }
+        .logo { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 0.1em; }
+        .tagline { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
+
+        .input-group { margin-bottom: 24px; }
+        .input-group label {
+            display: block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 8px;
+            color: var(--text-dim);
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            font-family: inherit;
+            font-size: 0.85rem;
+            background: #fff;
+            transition: all 0.2s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--border-bold);
+        }
+
+        textarea { height: 100px; resize: none; }
+
+        .primary-btn {
+            width: 100%;
+            background-color: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 14px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 12px;
+        }
+
+        .primary-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+        .primary-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex-grow: 1;
+            padding: 40px 60px;
+        }
+
+        .content-header {
+            margin-bottom: 48px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .content-header h2 { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; }
+        .status-badge { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 40px;
+        }
+
+        .image-preview {
+            width: 100%;
+            background: #f0f0f0;
+            border: 1px solid var(--border-color);
+            aspect-ratio: 16/9;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-preview img { width: 100%; height: 100%; object-fit: contain; }
+
+        /* Results Panel */
+        .results-panel {
+            background: #fff;
+            border: 1px solid var(--border-color);
+            padding: 32px;
+        }
+
+        .audit-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 32px;
+        }
+
+        .score-box {
+            text-align: right;
+        }
+
+        .score-val { font-family: var(--font-display); font-size: 2.5rem; font-weight: 700; line-height: 1; }
+        .score-label { font-size: 0.6rem; text-transform: uppercase; color: var(--text-dim); font-weight: 700; letter-spacing: 0.1em; }
+
+        .critique-box h4 { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; letter-spacing: 0.1em; }
+        .critique-text { font-size: 1rem; color: var(--text-secondary); line-height: 1.5; max-width: 600px; }
+
+        .panel-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 32px;
+        }
+
+        .panel-item {
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-top: 3px solid #eee;
+        }
+
+        .panel-item.fail { border-top-color: #ff4444; }
+        .panel-item.pass { border-top-color: #00c851; }
+
+        .panel-id { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+        .panel-status { font-size: 0.8rem; font-weight: 600; margin-bottom: 12px; }
+        .panel-issue { font-size: 0.85rem; line-height: 1.4; color: var(--text-secondary); margin-bottom: 16px; }
+        .panel-fix { font-size: 0.8rem; padding: 12px; background: #f8f8f8; color: #555; border-radius: 4px; font-style: italic; }
+
+        .loader {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0,0,0,0.1);
+            border-top: 2px solid #000;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .comparison-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .comparison-item h4 { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">Baasha</div>
+                <div class="tagline">Continuity Audit</div>
+            </div>
+
+            <div class="sidebar-content">
+                <div class="input-group">
+                    <label>Grid URL</label>
+                    <input type="text" id="grid_url" placeholder="Source storyboard URL..." oninput="updatePreview()">
+                </div>
+
+                <div class="input-group">
+                    <label>Story Context</label>
+                    <textarea id="story_context" placeholder="Full narrative script..."></textarea>
+                </div>
+
+                <div class="input-group">
+                    <label>Panel Breakdown (Optional)</label>
+                    <textarea id="panel_descriptions" placeholder="Panel-by-panel descriptions..."></textarea>
+                </div>
+
+                <button class="primary-btn" id="judge_btn" onclick="judgeGrid()">Run Audit</button>
+                <div id="judge_loader" class="loader"></div>
+            </div>
+
+            <div class="sidebar-footer">
+                &copy; 2026 Baasha Intelligence
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="content-header">
+                <div>
+                    <span class="status-badge" id="status_label">Ready</span>
+                    <h2>Visual Continuity Inspector</h2>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <!-- Initial State -->
+                <div id="initial_view">
+                    <div class="image-preview">
+                        <img id="img_preview" src="https://via.placeholder.com/1200x675/f0f0f0/cccccc?text=Waiting+for+Source+Grid" alt="Preview">
+                    </div>
+                </div>
+
+                <!-- Results State -->
+                <div id="audit_results" class="hidden">
+                    <div class="results-panel">
+                        <div class="audit-summary">
+                            <div class="critique-box">
+                                <h4>Global Assessment</h4>
+                                <div class="critique-text" id="critique_text"></div>
+                            </div>
+                            <div class="score-box">
+                                <div class="score-label">Consistency Score</div>
+                                <div class="score-val" id="score_val">--</div>
+                            </div>
+                        </div>
+
+                        <h4>Panel Breakdown</h4>
+                        <div class="panel-list" id="panel_list"></div>
+
+                        <div style="margin-top: 48px; border-top: 1px solid var(--border-color); padding-top: 32px;">
+                            <button class="primary-btn" id="fix_btn" style="width: auto; padding: 14px 40px;" onclick="fixGrid()">Execute Refinement Pass</button>
+                            <div id="fix_loader" class="loader" style="margin-top: 12px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Section -->
+                    <div id="refinement_section" class="hidden">
+                        <div class="comparison-layout">
+                            <div class="comparison-item">
+                                <h4>Original Draft</h4>
+                                <div class="image-preview">
+                                    <img id="original_result">
+                                </div>
+                            </div>
+                            <div class="comparison-item">
+                                <h4>Refined Outcome</h4>
+                                <div class="image-preview">
+                                    <img id="refined_result">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updatePreview() {
+            const url = document.getElementById('grid_url').value;
+            if (url) document.getElementById('img_preview').src = url;
+        }
+
+        async function judgeGrid() {
+            const grid_url = document.getElementById('grid_url').value;
+            const story_context = document.getElementById('story_context').value;
+            let panel_descriptions = [];
+            try {
+                panel_descriptions = JSON.parse(document.getElementById('panel_descriptions').value);
+            } catch(e) {
+                panel_descriptions = document.getElementById('panel_descriptions').value.split('\n').filter(l => l.trim());
+            }
+
+            if (!grid_url) return alert("Grid URL is required");
+
+            const btn = document.getElementById('judge_btn');
+            const loader = document.getElementById('judge_loader');
+            btn.disabled = true;
+            loader.style.display = 'block';
+            document.getElementById('status_label').innerText = 'Auditing...';
+
+            try {
+                const response = await fetch('/api/judge_grid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ grid_url, story_context, panel_descriptions })
+                });
+                const report = await response.json();
+                displayResults(report);
+            } catch (err) {
+                alert("Audit failed: " + err.message);
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+                document.getElementById('status_label').innerText = 'Audit Complete';
+            }
+        }
+
+        function displayResults(report) {
+            document.getElementById('audit_results').classList.remove('hidden');
+            document.getElementById('score_val').innerText = report.consistency_score;
+            document.getElementById('critique_text').innerText = report.holistic_critique;
+
+            const list = document.getElementById('panel_list');
+            list.innerHTML = '';
+
+            if (report.panels) {
+                report.panels.forEach(p => {
+                    const el = document.createElement('div');
+                    el.className = `panel-item ${p.status.toLowerCase()}`;
+                    el.innerHTML = `
+                        <div class="panel-id">Panel ${p.panel_index}</div>
+                        <div class="panel-status" style="color: ${p.status === 'PASS' ? '#00c851' : '#ff4444'}">${p.status}</div>
+                        <div class="panel-issue">${p.issue || 'Consistency Verified'}</div>
+                        ${p.fix_directive ? `<div class="panel-fix">${p.fix_directive}</div>` : ''}
+                    `;
+                    list.appendChild(el);
+                });
+            }
+        }
+
+        async function fixGrid() {
+            const grid_url = document.getElementById('grid_url').value;
+            const story_context = document.getElementById('story_context').value;
+            let panel_descriptions = [];
+            try {
+                panel_descriptions = JSON.parse(document.getElementById('panel_descriptions').value);
+            } catch(e) {
+                panel_descriptions = document.getElementById('panel_descriptions').value.split('\n').filter(l => l.trim());
+            }
+
+            const btn = document.getElementById('fix_btn');
+            const loader = document.getElementById('fix_loader');
+            btn.disabled = true;
+            loader.style.display = 'block';
+            document.getElementById('status_label').innerText = 'Refining...';
+
+            try {
+                const response = await fetch('/api/refine_grid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ grid_url, story_context, panel_descriptions })
+                });
+                const data = await response.json();
+
+                document.getElementById('refinement_section').classList.remove('hidden');
+                document.getElementById('original_result').src = data.original_grid_url;
+                document.getElementById('refined_result').src = data.refined_grid_url;
+
+                displayResults(data.audit_report);
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            } catch (err) {
+                alert("Refinement failed: " + err.message);
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+                document.getElementById('status_label').innerText = 'Ready';
+            }
+        }
+    </script>
+</body>
+</html>

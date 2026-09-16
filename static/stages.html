@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baasha Production Board</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #ffffff;
+            --secondary: #94a3b8;
+            --accent: #8b5cf6;
+            --accent-hover: #7c3aed;
+            --accent-glow: rgba(139, 92, 246, 0.3);
+            --bg: #030712;
+            --card-bg: rgba(17, 24, 39, 0.45);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --emerald: #10b981;
+            --sky: #38bdf8;
+            --rose: #f43f5e;
+            --gold: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.15) 0%, transparent 40%);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5 {
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: -0.01em;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem;
+        }
+
+        /* Premium Header styling */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            background: linear-gradient(135deg, var(--accent) 0%, #6366f1 100%);
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 8px 16px rgba(139, 92, 246, 0.3);
+        }
+
+        .logo {
+            font-size: 1.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            background: linear-gradient(to right, #ffffff, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .draft-info {
+            text-align: right;
+        }
+
+        .draft-info h1 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .draft-info p {
+            font-size: 0.85rem;
+            color: var(--secondary);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+
+        /* Nav / Stepper Grid */
+        .stepper {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 1rem;
+            margin-bottom: 3rem;
+            position: relative;
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.75rem;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+        }
+
+        @media screen and (max-width: 600px) {
+            .stepper {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .step {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+        }
+
+        .step:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .step-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.25s ease;
+            flex-shrink: 0;
+            color: var(--secondary);
+        }
+
+        .step.active {
+            background: rgba(139, 92, 246, 0.1);
+            border-color: rgba(139, 92, 246, 0.25);
+        }
+
+        .step.active .step-circle {
+            color: #ffffff;
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .step.completed .step-circle {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: var(--emerald);
+        }
+
+        .step-text-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .step-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .step-sublabel {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--secondary);
+        }
+
+        /* Glass Content Card */
+        .content-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: 3rem;
+            min-height: 520px;
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
+            position: relative;
+        }
+
+        .stage-view {
+            display: none;
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .stage-view.active {
+            display: block;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Screenplay Dual Column Layout */
+        .screenplay-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .screenplay-card {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            transition: all 0.25s ease;
+        }
+
+        .screenplay-card:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: var(--border-hover);
+        }
+
+        .screenplay-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .screenplay-audio {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            border-left: 1px solid var(--border);
+            padding-left: 2rem;
+        }
+
+        .badge-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .meta-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .badge-scene {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--sky);
+        }
+
+        .badge-duration {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--gold);
+        }
+
+        .badge-type {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent);
+        }
+
+        .badge-character {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--emerald);
+        }
+
+        .scene-text {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #f1f5f9;
+        }
+
+        .dialogue-bubble {
+            background: rgba(139, 92, 246, 0.08);
+            border: 1px solid rgba(139, 92, 246, 0.12);
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #e2e8f0;
+            position: relative;
+        }
+
+        .silent-beat {
+            font-style: italic;
+            color: var(--secondary);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+        }
+
+        /* Cast Directory Portfolios */
+        .character-grid {
+            /* display: grid; */
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .character-card {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .character-card:hover {
+            transform: translateY(-8px);
+            border-color: var(--accent);
+            box-shadow: 0 15px 30px rgba(139, 92, 246, 0.15);
+        }
+
+        .character-img-wrapper {
+            position: relative;
+            width: 100%;
+            height: 320px;
+            background: #090d16;
+            overflow: hidden;
+        }
+
+        .character-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .character-card:hover .character-img {
+            transform: scale(1.05);
+        }
+
+        .character-card-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(3, 7, 18, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            padding: 0.3rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--sky);
+        }
+
+        .character-info {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex-grow: 1;
+        }
+
+        .character-info h3 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .character-description {
+            font-size: 0.85rem;
+            color: var(--secondary);
+            line-height: 1.5;
+        }
+
+        /* Directives Blueprint Board */
+        .directives-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .directive-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 1.75rem 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .directive-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .directive-body {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
+        .directive-prompt-box {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .directive-prompt-box label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--sky);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .directive-prompt-box p {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #f1f5f9;
+        }
+
+        .directive-meta-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        /* Interactive Storyboard Grid */
+        .storyboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 2rem;
+        }
+
+        .storyboard-card {
+            position: relative;
+            aspect-ratio: 9/16;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #000;
+        }
+
+        .storyboard-card:hover {
+            transform: scale(1.03) translateY(-4px);
+            border-color: var(--accent);
+            box-shadow: 0 20px 40px rgba(139, 92, 246, 0.25);
+        }
+
+        .storyboard-card img,
+        .storyboard-card video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.5s ease;
+        }
+
+        .storyboard-card:hover img {
+            transform: scale(1.04);
+        }
+
+        .storyboard-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 1.5rem;
+            opacity: 0.9;
+            transition: opacity 0.3s;
+        }
+
+        .storyboard-overlay h4 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .storyboard-overlay p {
+            font-size: 0.8rem;
+            color: var(--secondary);
+            margin-top: 0.25rem;
+        }
+
+        /* Phone Device Mock Frame */
+        .device-simulator-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        .phone-frame {
+            width: 320px;
+            height: 640px;
+            border-radius: 44px;
+            border: 10px solid #1e293b;
+            background: #000;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .phone-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 130px;
+            height: 24px;
+            background: #1e293b;
+            border-bottom-left-radius: 16px;
+            border-bottom-right-radius: 16px;
+            z-index: 100;
+        }
+
+        .phone-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Buttons & Actions */
+        .action-btn {
+            background: linear-gradient(135deg, var(--accent) 0%, #6366f1 100%);
+            color: white;
+            padding: 0.85rem 1.75rem;
+            border-radius: 12px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.25s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 8px 20px -6px rgba(139, 92, 246, 0.5);
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px -4px rgba(139, 92, 246, 0.6);
+            background: linear-gradient(135deg, #9333ea 0%, #4f46e5 100%);
+        }
+
+        .back-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--secondary);
+            padding: 0.6rem 1.25rem;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--primary);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Log Console styling */
+        .log-console {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            margin-top: 2.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+        }
+
+        .log-console-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.95rem 1.5rem;
+            background: rgba(30, 41, 59, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-title-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .log-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: #ffffff;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64748b;
+        }
+
+        .status-dot.active {
+            background: var(--emerald);
+            box-shadow: 0 0 10px var(--emerald);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.3);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .log-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--secondary);
+            padding: 0.35rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .log-btn:hover {
+            background: rgba(255, 255, 255, 0.04);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .log-body {
+            height: 200px;
+            padding: 1.5rem;
+            background: #020617;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            color: var(--sky);
+            white-space: pre-wrap;
+            scroll-behavior: smooth;
+        }
+
+        .log-console.minimized .log-body {
+            height: 0;
+            padding: 0;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(3, 7, 18, 0.95);
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(12px);
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 85vh;
+            border-radius: 16px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+            object-fit: contain;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 24px;
+            right: 36px;
+            color: #ffffff;
+            font-size: 36px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .close-modal:hover {
+            color: var(--secondary);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 5rem 2rem;
+            color: var(--secondary);
+        }
+
+        .empty-state i {
+            margin-bottom: 1.25rem;
+            display: block;
+            color: var(--accent);
+        }
+
+        /* Premium Audio waveform mock skin */
+        .audio-preview-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="imageModal" class="modal" onclick="closeImageModal()">
+        <span class="close-modal">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo-group">
+                <div class="logo-icon">
+                    <i data-lucide="play" style="fill: white; color: white; width: 16px; height: 16px;"></i>
+                </div>
+                <div class="logo">BAASHA</div>
+            </div>
+            <div class="draft-info">
+                <h1 id="draft-title">Loading Draft...</h1>
+                <p id="draft-id-ver">ID: -- | Version: --</p>
+            </div>
+        </header>
+
+        <button class="back-btn" id="global-back-btn" style="display: none; margin-bottom: 2rem;">
+            <i data-lucide="arrow-left"></i> Back to Idea
+        </button>
+
+        <div class="stepper" id="stepper">
+            <!-- Stepper cells generated dynamically -->
+        </div>
+
+        <div class="content-card">
+            <!-- Loading view -->
+            <div id="loading-overlay" class="empty-state">
+                <i data-lucide="loader-2" class="animate-spin"
+                    style="width: 3rem; height: 3rem; stroke-width: 1.5;"></i>
+                <p style="margin-top: 1rem; font-weight: 500;">Fetching production data...</p>
+            </div>
+
+            <!-- Error state -->
+            <div id="error-state" class="empty-state" style="display: none;">
+                <i data-lucide="alert-circle" style="width: 3rem; height: 3rem; color: var(--rose);"></i>
+                <p id="error-msg" style="margin-top: 1rem;">Failed to load draft data.</p>
+            </div>
+
+            <!-- Active welcome state -->
+            <div id="welcome-view" class="empty-state"
+                style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;">
+                <i data-lucide="sparkles" style="width: 4rem; height: 4rem; stroke: var(--accent);"></i>
+                <h2 style="font-size: 1.75rem; font-weight: 700; color: #ffffff;">No Active Storyboard</h2>
+                <p style="color: var(--secondary); max-width: 460px; font-size: 0.95rem; line-height: 1.6;">
+                    Please trigger a new storyboard generation in the Studio prompt interface to stream logs and
+                    visualize assets in real-time.
+                </p>
+                <button class="action-btn" onclick="window.location.href='/create'">
+                    <i data-lucide="plus" style="width: 16px; height: 16px;"></i> Create Storyboard
+                </button>
+            </div>
+
+            <!-- Stage 0: Story (Screenplay) -->
+            <div class="stage-view" id="stage-0">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">Interactive Screenplay</h2>
+                <div id="story-content" class="screenplay-container"></div>
+            </div>
+
+            <!-- Stage 1: Cast Portfolios -->
+            <div class="stage-view" id="stage-1">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">Cast Directory & Style Bible</h2>
+                <div id="character-content" class="character-grid"></div>
+            </div>
+
+            <!-- Stage 1.5: Grids -->
+            <div class="stage-view" id="stage-1.5">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">Spatial Generation Grids</h2>
+                <div id="grids-content" class="character-grid"></div>
+            </div>
+
+            <!-- Stage 2: Prompts (Blueprints) -->
+            <div class="stage-view" id="stage-2">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">Storyboard Blueprints & Motion Directives</h2>
+                <div id="prompts-content" class="directives-grid"></div>
+            </div>
+
+            <!-- Stage 3: Images & Scene Videos Grid -->
+            <div class="stage-view" id="stage-3">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem; flex-wrap: wrap; gap: 1rem;">
+                    <h2 style="font-size: 1.75rem;">Creative Assets Grid</h2>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <button id="gen-video-btn" onclick="triggerGenVideo()"
+                            style="display: none; align-items: center; gap: 0.5rem; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);">
+                            <i data-lucide="video" style="width: 16px; height: 16px;"></i> Generate Scene Videos
+                        </button>
+                        <div
+                            style="display: flex; gap: 0.25rem; background: rgba(255, 255, 255, 0.03); padding: 0.25rem; border-radius: 12px; border: 1px solid var(--border);">
+                            <button id="tab-visuals-images" onclick="switchVisualsTab('images')"
+                                style="background: var(--accent); color: white; border: none; padding: 0.45rem 1.1rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">Images</button>
+                            <button id="tab-visuals-videos" onclick="switchVisualsTab('videos')"
+                                style="background: transparent; color: var(--secondary); border: none; padding: 0.45rem 1.1rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s;">Scene
+                                Videos</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="images-content" style="display: flex; flex-direction: column; gap: 1.5rem;"></div>
+                <div id="videos-content" class="storyboard-grid" style="display: none;"></div>
+            </div>
+
+            <!-- Stage 4: Upscaling -->
+            <div class="stage-view" id="stage-4">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">High Fidelity Upscaling</h2>
+                <div class="empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+                    <i data-lucide="aperture" class="animate-spin" style="width: 3rem; height: 3rem; stroke: var(--accent);"></i>
+                    <p>Generating high-fidelity 9:16 cinematic assets...</p>
+                </div>
+            </div>
+
+            <!-- Stage 5: Audio / Preview -->
+            <div class="stage-view" id="stage-5">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">Audio Integration & Preview</h2>
+                <div id="production-content" style="display: flex; flex-direction: column; gap: 2rem;"></div>
+            </div>
+
+            <!-- Stage 9: Master Export -->
+            <div class="stage-view" id="stage-9">
+                <h2 style="margin-bottom: 2rem; font-size: 1.75rem; text-align: center;">Master Export Screen</h2>
+                <div id="final-content"
+                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rem;">
+                </div>
+            </div>
+
+            <!-- Navigation toolbar -->
+            <div class="stage-nav" id="stage-nav"
+                style="display: none; margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border); justify-content: space-between;">
+                <button class="back-btn" id="prev-stage-btn" style="margin-bottom: 0;">
+                    <i data-lucide="chevron-left" style="width: 16px; height: 16px;"></i> Previous
+                </button>
+                <button class="action-btn" id="next-stage-btn">
+                    Next Stage <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Sticky System Log Terminal Console -->
+        <div class="log-console" id="log-console">
+            <div class="log-console-header">
+                <div class="log-title-wrapper">
+                    <span class="status-dot active" id="log-status-dot"></span>
+                    <span class="log-title">System Execution Terminal</span>
+                </div>
+                <div class="log-actions">
+                    <button class="log-btn" onclick="copyLogs()">
+                        <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Copy Log
+                    </button>
+                    <button class="log-btn" id="toggle-log-btn" onclick="toggleLogConsole()">
+                        <i data-lucide="minimize-2" id="toggle-log-icon" style="width: 14px; height: 14px;"></i>
+                        Minimize
+                    </button>
+                </div>
+            </div>
+            <div class="log-body" id="log-body">No logs polled yet. Starting pipeline execution listener...</div>
+        </div>
+    </div>
+
+    <script>
+        const STAGES = [
+            { id: 0, label: 'Story', sublabel: 'Screenplay', icon: 'file-text' },
+            { id: 1, label: 'Cast', sublabel: 'Portfolios', icon: 'users' },
+            { id: 1.5, label: 'Grids', sublabel: 'Spatial Layouts', icon: 'layout-grid' },
+            { id: 2, label: 'Directives', sublabel: 'Blueprints', icon: 'compass' },
+            { id: 3, label: 'Visuals', sublabel: 'Detailed Timeline', icon: 'image' },
+            { id: 4, label: 'High Fidelity', sublabel: 'Upscaled Assets', icon: 'aperture' },
+            { id: 5, label: 'Production', sublabel: 'Assembly', icon: 'music' },
+            { id: 9, label: 'Final', sublabel: 'Export', icon: 'video' }
+        ];
+
+        let currentDraft = null;
+        let activeStageId = 0;
+        let showRawGrids = false;
+
+        // Initialize lucide icons at boot
+        lucide.createIcons();
+
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                idea_id: params.get('idea_id'),
+                version: params.get('version') || 1
+            };
+        }
+
+        async function fetchDraft() {
+            const { idea_id, version } = getQueryParams();
+            if (!idea_id) {
+                // Welcome mode
+                document.getElementById('loading-overlay').style.display = 'none';
+                document.getElementById('error-state').style.display = 'none';
+                document.getElementById('stepper').style.display = 'none';
+                document.getElementById('stage-nav').style.display = 'none';
+                document.getElementById('log-console').style.display = 'none';
+                document.getElementById('welcome-view').style.display = 'flex';
+                return;
+            }
+
+            document.getElementById('welcome-view').style.display = 'none';
+            document.getElementById('stepper').style.display = 'grid';
+            document.getElementById('stage-nav').style.display = 'flex';
+            document.getElementById('log-console').style.display = 'flex';
+
+            try {
+                const response = await fetch(`/draft/${idea_id}/${version}`);
+                if (!response.ok) throw new Error("Draft storyboard not found");
+
+                const data = await response.json();
+                currentDraft = data;
+
+                // Safely unpack video_data
+                if (typeof currentDraft.video_data === 'string' && currentDraft.video_data) {
+                    try {
+                        currentDraft._video_data = JSON.parse(currentDraft.video_data);
+                    } catch (e) {
+                        console.error("Failed to parse video_data string JSON", e);
+                    }
+                }
+
+                renderDraftInfo();
+                renderStepper();
+
+                // Auto advance navigate to target active stage
+                const stage = currentDraft.stage === -1 ? 0 : currentDraft.stage;
+                const targetStage = STAGES.find(s => s.id <= stage && STAGES[STAGES.indexOf(s) + 1]?.id > stage) || STAGES[0];
+                navigateToStage(targetStage.id);
+
+                document.getElementById('loading-overlay').style.display = 'none';
+                document.getElementById('stage-nav').style.display = 'flex';
+                updateNavButtons();
+                startLogPolling();
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function renderDraftInfo() {
+            document.getElementById('draft-title').textContent = currentDraft.title || "Untitled Masterpiece";
+            let verInfo = `ID: ${currentDraft.idea_id.substring(0, 8)} | Version: ${currentDraft.version}`;
+            if (currentDraft.voice_id) verInfo += ` | Primary Voice: ${currentDraft.voice_id}`;
+            if (currentDraft.style_id) verInfo += ` | Custom Style: ${currentDraft.style_id}`;
+            document.getElementById('draft-id-ver').textContent = verInfo;
+        }
+
+        function renderStepper() {
+            const stepper = document.getElementById('stepper');
+            stepper.innerHTML = '';
+
+            STAGES.forEach(stage => {
+                const stepEl = document.createElement('div');
+                stepEl.className = `step ${activeStageId === stage.id ? 'active' : ''} ${currentDraft.stage >= stage.id ? 'completed' : ''}`;
+                stepEl.onclick = () => navigateToStage(stage.id);
+
+                stepEl.innerHTML = `
+                    <div class="step-circle">
+                        <i data-lucide="${stage.icon}" style="width: 16px; height: 16px;"></i>
+                    </div>
+                    <div class="step-text-wrapper">
+                        <span class="step-label">${stage.label}</span>
+                        <span class="step-sublabel">${stage.sublabel}</span>
+                    </div>
+                `;
+                stepper.appendChild(stepEl);
+            });
+            lucide.createIcons();
+        }
+
+        function navigateToStage(id) {
+            activeStageId = id;
+
+            document.querySelectorAll('.step').forEach((el, idx) => {
+                el.classList.toggle('active', STAGES[idx].id === id);
+            });
+
+            document.querySelectorAll('.stage-view').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            const stageEl = document.getElementById(`stage-${id}`);
+            if (stageEl) {
+                stageEl.classList.add('active');
+                renderStageContent(id);
+                updateNavButtons();
+            }
+        }
+
+        function updateNavButtons() {
+            const currentIndex = STAGES.findIndex(s => s.id === activeStageId);
+            const prevBtn = document.getElementById('prev-stage-btn');
+            const nextBtn = document.getElementById('next-stage-btn');
+
+            if (currentIndex > 0) {
+                prevBtn.style.visibility = 'visible';
+                prevBtn.onclick = () => navigateToStage(STAGES[currentIndex - 1].id);
+            } else {
+                prevBtn.style.visibility = 'hidden';
+            }
+
+            if (currentIndex < STAGES.length - 1) {
+                nextBtn.style.visibility = 'visible';
+                nextBtn.onclick = () => navigateToStage(STAGES[currentIndex + 1].id);
+            } else {
+                nextBtn.style.visibility = 'hidden';
+            }
+        }
+
+        function renderStageContent(id) {
+            switch (id) {
+                case 0: renderStory(); break;
+                case 1: renderCast(); break;
+                case 1.5: renderGrids(); break;
+                case 2: renderPrompts(); break;
+                case 3: renderImages(); break;
+                case 4: renderProduction(); break;
+                case 8: renderFinal(); break;
+            }
+        }
+
+        function renderStory() {
+            const content = document.getElementById('story-content');
+            if (!currentDraft.story) {
+                content.innerHTML = '<p class="empty-state">No screenplay narrative generated yet.</p>';
+                return;
+            }
+
+            const videoData = currentDraft._video_data || {};
+            const textArray = videoData.text || currentDraft.story.split('\n').filter(s => s.trim());
+            const stylingArray = videoData.text_styling || [];
+            const cinematicArray = videoData.cinematic || [];
+
+            content.innerHTML = textArray.map((txt, i) => {
+                const styleMeta = stylingArray[i] || {};
+                const cinematic = cinematicArray[i] || {};
+                const charName = cinematic.speaker || styleMeta.character || "";
+                const duration = styleMeta.duration || cinematic.duration || 3.0;
+
+                const leftCol = `
+                    <div class="screenplay-visual">
+                        <div class="badge-row">
+                            <span class="meta-badge badge-scene">Scene ${i + 1}</span>
+                            <span class="meta-badge badge-duration"><i data-lucide="clock" style="width: 10px; height: 10px;"></i> ${duration}s</span>
+                            ${cinematic.shot_type ? `<span class="meta-badge badge-type" style="background: rgba(234, 179, 8, 0.15); color: #facc15;"><i data-lucide="camera" style="width: 10px; height: 10px;"></i> ${cinematic.shot_type}</span>` : ''}
+                            ${cinematic.location_id ? `<span class="meta-badge badge-location" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;"><i data-lucide="map-pin" style="width: 10px; height: 10px;"></i> ${cinematic.location_id}</span>` : ''}
+                        </div>
+                        <p class="scene-text" style="font-weight: 500;">${cinematic.motion_prompt || txt}</p>
+                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem; font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
+                    </div>
+                `;
+
+                const dialogueBlock = (styleMeta.audio_type === "silence" || cinematic.audio_type === "silence")
+                    ? `<div class="silent-beat"><i data-lucide="volume-x" style="width: 14px; height: 14px; color: var(--rose);"></i> [Silent Beat / Visual Pacing Break]</div>`
+                    : `
+                        <div class="dialogue-bubble">
+                            <div class="badge-row" style="margin-bottom: 0.5rem;">
+                                <span class="meta-badge badge-character"><i data-lucide="mic" style="width: 10px; height: 10px;"></i> ${charName || 'Narrator'}</span>
+                            </div>
+                            <div contenteditable="true" id="scene-text-${i}" class="editable-dialogue" style="font-style: italic; outline: none; padding: 4px; border: 1px solid transparent; border-radius: 4px; transition: border 0.2s;" onfocus="this.style.border='1px solid var(--accent)'; this.style.background='rgba(0,0,0,0.2)';" onblur="this.style.border='1px solid transparent'; this.style.background='transparent';">${txt}</div>
+                        </div>
+                    `;
+
+                const rightCol = `
+                    <div class="screenplay-audio">
+                        ${dialogueBlock}
+                    </div>
+                `;
+
+                return `<div class="screenplay-card">${leftCol}${rightCol}</div>`;
+            }).join('');
+
+            // If paused at Stage 0 for review, show the Review Action Bar
+            if (currentDraft.stage === 0) {
+                content.innerHTML += `
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode</h4>
+                            <p style="color: var(--text-muted); font-size: 0.85rem;">You can click directly on the dialogue text above to edit sentences. Save edits or approve to continue to Casting.</p>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="patchStage('story')" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">Save Script Edits</button>
+                            <button onclick="advanceStage(1)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Cast Characters</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            lucide.createIcons();
+        }
+
+        function renderCast() {
+            const content = document.getElementById('character-content');
+            if (!currentDraft.character_ref) {
+                content.innerHTML = '<div class="empty-state"><i data-lucide="user-minus"></i><p>No visual cast profiles mapped to this draft storyboard.</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            try {
+                const allChars = JSON.parse(currentDraft.character_ref);
+                const chars = allChars.filter(c => !c.name.includes('grid') && !c.name.includes('crop'));
+
+                let html = chars.map(c => {
+                    const searchUrl = c.search_url || (c.search_urls && c.search_urls[0]) || null;
+                    return `
+                    <div class="character-card" style="${searchUrl ? 'grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); overflow: hidden;' : ''}">
+                        <div style="${searchUrl ? 'background: var(--card-bg); display: flex; flex-direction: column;' : ''}">
+                            <div class="character-img-wrapper" onclick="openImageModal('${c.url}')">
+                                <span class="character-card-badge">Character Cast</span>
+                                <img src="${c.url}" class="character-img" onerror="this.src='https://via.placeholder.com/300x400?text=Cast+Avatar'">
+                            </div>
+                            <div class="character-info">
+                                <h3>${c.name}</h3>
+                                <p class="character-description">${c.description || 'Visual casting reference details.'}</p>
+                            </div>
+                        </div>
+                        ${searchUrl ? `
+                        <div style="background: var(--card-bg); display: flex; flex-direction: column;">
+                            <div class="character-img-wrapper" onclick="openImageModal('${searchUrl}')">
+                                <span class="character-card-badge" style="background: rgba(56, 189, 248, 0.9);">Search Reference</span>
+                                <img src="${searchUrl}" class="character-img" onerror="this.src='https://via.placeholder.com/300x400?text=Search+Ref'">
+                            </div>
+                            <div class="character-info">
+                                <h3>${c.name} (Source)</h3>
+                                <p class="character-description">Real-world search query:<br><strong style="color: #cbd5e1; font-style: italic;">"${c.search || 'Visual grounding reference'}"</strong></p>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `}).join('');
+
+                const srefs = currentDraft.style_reference_urls || [];
+                html += srefs.map((refUrl, idx) => `
+                    <div class="character-card" onclick="openImageModal('${refUrl}')">
+                        <div class="character-img-wrapper">
+                            <span class="character-card-badge" style="color: var(--accent);">Style Reference ${idx + 1}</span>
+                            <img src="${refUrl}" class="character-img" onerror="this.src='https://via.placeholder.com/300x400?text=Style+Reference'">
+                        </div>
+                        <div class="character-info">
+                            <h3>Aesthetic Sref Blueprint</h3>
+                            <p class="character-description">Dynamic visual reference mapping for lighting, textures, and grading.</p>
+                        </div>
+                    </div>
+                `).join('');
+                // If paused at Stage 1 for review, show the Review Action Bar
+                if (currentDraft.stage === 1) {
+                    html += `
+                        <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
+                            <div>
+                                <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Cast & Elements</h4>
+                                <p style="color: var(--text-muted); font-size: 0.85rem;">Review visual blueprints and character models. Approve to generate scene directives.</p>
+                            </div>
+                            <div style="display: flex; gap: 1rem;">
+                                <button onclick="advanceStage(2)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                content.innerHTML = html;
+            } catch (e) {
+                content.innerHTML = '<p class="empty-state">Error formatting character references.</p>';
+            }
+            lucide.createIcons();
+        }
+
+        function toggleRawGrids() {
+            showRawGrids = !showRawGrids;
+            renderGrids();
+        }
+
+        function renderGrids() {
+            const content = document.getElementById('grids-content');
+            if (!currentDraft.character_ref) {
+                content.innerHTML = '<div class="empty-state"><i data-lucide="layout-grid"></i><p>No spatial grids generated yet.</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            try {
+                const videoData = currentDraft._video_data || {};
+                const allChars = JSON.parse(currentDraft.character_ref);
+                const refinedGrids = allChars.filter(c => c.name.includes('story-grid'));
+                const rawGrids = allChars.filter(c => c.name.includes('other-grid'));
+
+                if (refinedGrids.length === 0 && rawGrids.length === 0) {
+                    content.innerHTML = '<div class="empty-state"><i data-lucide="layout-grid"></i><p>No spatial grids generated yet.</p></div>';
+                    lucide.createIcons();
+                    return;
+                }
+
+                const renderCard = (c, type, color) => `
+                    <div class="character-card" style="display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
+                        <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
+                            <div class="character-img-wrapper" style="flex: 0 0 250px; cursor: pointer;" onclick="openImageModal('${c.url}')">
+                                <span class="character-card-badge" style="background: ${color};">${type}</span>
+                                <img src="${c.url}" class="character-img" style="border-radius: 8px;" onerror="this.src='https://via.placeholder.com/300x400?text=Grid'">
+                            </div>
+                            <div class="character-info" style="flex: 1; display: flex; flex-direction: column; gap: 0.5rem;">
+                                <h3 style="font-size: 1.1rem;">${c.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h3>
+                                <p class="character-description" style="margin-bottom: 0.5rem;">One-shot generated structural spatial layout constraint.</p>
+                                ${c.range && videoData.original_image_descriptions ? `
+                                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; font-size: 0.85rem; color: #cbd5e1; max-height: 250px; overflow-y: auto;">
+                                        <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Prompt Sequence</h4>
+                                        <ul style="padding-left: 1rem; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                                            ${videoData.original_image_descriptions.slice(c.range[0], c.range[1]).map((p, i) => `<li style="line-height: 1.4;"><strong>Panel ${c.range[0] + i + 1}:</strong> ${p}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                let html = `
+                    <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                        <button onclick="toggleRawGrids()" style="background: rgba(255,255,255,0.05); color: white; border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                            <i data-lucide="${showRawGrids ? 'eye-off' : 'eye'}" style="width: 14px; height: 14px;"></i>
+                            ${showRawGrids ? 'Hide Raw Grids' : 'Show Raw Alternate Grids'}
+                        </button>
+                    </div>
+                `;
+
+                if (showRawGrids && rawGrids.length > 0) {
+                    html += `
+                        <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr; gap: 2rem;">
+                            <div>
+                                <h3 style="margin-bottom: 1rem; color: var(--accent); font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">Refined (Selected) Grids</h3>
+                                <div class="character-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">
+                                    ${refinedGrids.map(c => renderCard(c, c.name.includes('crop') ? 'Asset Crop' : 'Final Grid', 'rgba(56, 189, 248, 0.9)')).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 style="margin-bottom: 1rem; color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">Raw (Discarded) Grids</h3>
+                                <div class="character-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">
+                                    ${rawGrids.map(c => renderCard(c, 'Raw Grid', 'rgba(148, 163, 184, 0.9)')).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    html += `<div class="character-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">` + refinedGrids.map(c => renderCard(c, c.name.includes('crop') ? 'Asset Crop' : 'Final Grid', 'rgba(56, 189, 248, 0.9)')).join('') + `</div>`;
+                }
+                // If paused at Stage 1 for review, show the Review Action Bar
+                if (currentDraft.stage === 1) {
+                    html += `
+                        <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
+                            <div>
+                                <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Spatial Grids</h4>
+                                <p style="color: var(--text-muted); font-size: 0.85rem;">Review spatial generation layouts. Approve to generate individual scene directives.</p>
+                            </div>
+                            <div style="display: flex; gap: 1rem;">
+                                <button onclick="advanceStage(2)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                content.innerHTML = html;
+            } catch (e) {
+                content.innerHTML = '<p class="empty-state">Error formatting grids.</p>';
+            }
+            lucide.createIcons();
+        }
+
+        function renderPrompts() {
+            const content = document.getElementById('prompts-content');
+            const prompts = currentDraft.image_descriptions || [];
+            const videoData = currentDraft._video_data || {};
+
+            let html = '';
+
+            // Master style reference description injection
+            const styleDesc = videoData.style_description;
+            if (styleDesc) {
+                html += `
+                    <div class="directive-card" style="border-color: rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.03);">
+                        <div class="directive-header">
+                            <h3 style="color: var(--accent); display: flex; align-items: center; gap: 0.5rem;">
+                                <i data-lucide="palette" style="width: 18px; height: 18px;"></i> Visual DNA Style Blueprint
+                            </h3>
+                            <span class="meta-badge" style="background: rgba(139, 92, 246, 0.15); color: var(--accent);">Dynamic Sref Description</span>
+                        </div>
+                        <p style="font-size: 0.95rem; line-height: 1.6; color: #f1f5f9; font-style: italic;">"${styleDesc}"</p>
+                    </div>
+                `;
+            }
+
+            const gridPrompt = videoData.grid_prompt;
+            if (gridPrompt) {
+                html += `
+                    <div class="directive-card" style="border-color: rgba(56, 189, 248, 0.2); background: rgba(56, 189, 248, 0.02);">
+                        <div class="directive-header">
+                            <h3 style="color: var(--sky); display: flex; align-items: center; gap: 0.5rem;">
+                                <i data-lucide="layout" style="width: 18px; height: 18px;"></i> Master Spatial Grid Prompt (One-Shot Blueprint)
+                            </h3>
+                            <span class="meta-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--sky);">Consistency Prompt</span>
+                        </div>
+                        <p style="font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: 12px; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.03);">${gridPrompt}</p>
+                    </div>
+                `;
+            }
+
+            if (prompts.length === 0 && !gridPrompt) {
+                content.innerHTML = '<p class="empty-state">No visual blueprints generated for this draft.</p>';
+                return;
+            }
+
+            html += prompts.map((p, i) => {
+                const text = Array.isArray(p) ? p[0] : p;
+                const cinematic = (videoData.cinematic && videoData.cinematic[i]) || {};
+                const motionPrompt = cinematic.motion_prompt || "";
+                const priorShotIndex = cinematic.relative_prior_shot_index;
+                const transitionPrompt = cinematic.state_transition_prompt || "";
+
+                return `
+                    <div class="directive-card">
+                        <div class="directive-header">
+                            <h4 style="font-weight: 700; color: #ffffff;">Storyboard Panel ${i + 1}</h4>
+                            <span class="meta-badge badge-scene">Shot #${i + 1} Directives</span>
+                        </div>
+                        <div class="directive-body">
+                            <div class="directive-prompt-box">
+                                <label>Image Composition Prompt</label>
+                                <p style="font-style: italic; color: #ffffff;">"${text}"</p>
+                                ${motionPrompt ? `
+                                    <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                                        <label style="color: var(--accent);">Motion Directive</label>
+                                        <p style="color: #cbd5e1;">${motionPrompt}</p>
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="directive-meta-panel">
+                                <span style="font-size: 0.7rem; font-weight: 600; color: var(--secondary); text-transform: uppercase;">Directives Meta</span>
+                                ${priorShotIndex !== undefined && priorShotIndex !== null ? `
+                                    <div style="font-size: 0.8rem; background: rgba(139,92,246,0.08); padding: 0.5rem; border-radius: 6px; border: 1px solid rgba(139,92,246,0.12);">
+                                        <div style="font-weight: 700; color: var(--accent); font-size: 0.7rem; margin-bottom: 0.2rem;">Continuity Cut Ref: Shot #${priorShotIndex}</div>
+                                        ${transitionPrompt ? `<div style="font-style: italic; color: #94a3b8; font-size: 0.75rem;">"${transitionPrompt}"</div>` : ''}
+                                    </div>
+                                ` : '<div style="font-size: 0.8rem; color: var(--secondary);">Establishing / Cut Beat</div>'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // If paused at Stage 2 for review, show the Review Action Bar
+            if (currentDraft.stage === 2) {
+                html += `
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode</h4>
+                            <p style="color: var(--text-muted); font-size: 0.85rem;">Review the generated scene prompts and visual directives before heavy image rendering.</p>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="advanceStage(3)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Render Images</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        function switchVisualsTab(tab) {
+            const imgBtn = document.getElementById('tab-visuals-images');
+            const vidBtn = document.getElementById('tab-visuals-videos');
+            const imgCont = document.getElementById('images-content');
+            const vidCont = document.getElementById('videos-content');
+
+            if (!imgBtn || !vidBtn || !imgCont || !vidCont) return;
+
+            if (tab === 'images') {
+                imgBtn.style.background = 'var(--accent)';
+                imgBtn.style.color = 'white';
+                vidBtn.style.background = 'transparent';
+                vidBtn.style.color = 'var(--secondary)';
+                imgCont.style.display = 'grid';
+                vidCont.style.display = 'none';
+            } else {
+                vidBtn.style.background = 'var(--accent)';
+                vidBtn.style.color = 'white';
+                imgBtn.style.background = 'transparent';
+                imgBtn.style.color = 'var(--secondary)';
+                imgCont.style.display = 'none';
+                vidCont.style.display = 'grid';
+                renderVideosTab();
+            }
+        }
+
+        function renderVideosTab() {
+            const content = document.getElementById('videos-content');
+            if (!content) return;
+
+            const videoData = currentDraft._video_data;
+            const images = videoData?.images || [];
+            const imageToVideos = videoData?.image_to_videos || {};
+
+            const sceneVideos = images.map((imgUrl, i) => {
+                const vidUrl = imageToVideos[imgUrl];
+                return { sceneIndex: i + 1, imgUrl, vidUrl };
+            }).filter(item => item.vidUrl);
+
+            if (sceneVideos.length === 0) {
+                content.innerHTML = '<div class="empty-state"><i data-lucide="video-off" style="width: 3rem; height: 3rem;"></i><p>No scene videos compiled yet.</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            content.innerHTML = sceneVideos.map(item => `
+                <div class="storyboard-card">
+                    <video controls src="${item.vidUrl}" poster="${item.imgUrl}"></video>
+                    <div class="storyboard-overlay" style="pointer-events: none;">
+                        <h4>Scene ${item.sceneIndex} Video</h4>
+                        <p>Motion Animated cut</p>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderImages() {
+            switchVisualsTab('images');
+
+            const content = document.getElementById('images-content');
+            const videoData = currentDraft._video_data || {};
+            const images = videoData.images || [];
+
+            const textArray = videoData.text || currentDraft.story.split('\n').filter(s => s.trim());
+            const stylingArray = videoData.text_styling || [];
+            const cinematicArray = videoData.cinematic || [];
+
+            const genVideoBtn = document.getElementById('gen-video-btn');
+            if (genVideoBtn) {
+                genVideoBtn.style.display = images.length > 0 ? 'flex' : 'none';
+            }
+
+            if (images.length === 0) {
+                content.innerHTML = '<div class="empty-state"><i data-lucide="image-off" style="width: 3rem; height: 3rem;"></i><p>Rendering storyboard visual images in progress...</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            content.innerHTML = images.map((url, i) => {
+                const txt = textArray[i] || "";
+                const styleMeta = stylingArray[i] || {};
+                const cinematic = cinematicArray[i] || {};
+                const charName = cinematic.speaker || styleMeta.character || "";
+                const duration = styleMeta.duration || cinematic.duration || 3.0;
+
+                const leftCol = `
+                    <div class="screenplay-visual" style="flex: 1.5;">
+                        <img src="${url}" style="width: 100%; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); cursor: pointer;" onclick="openImageModal('${url}')" loading="lazy">
+                    </div>
+                `;
+
+                const dialogueBlock = (styleMeta.audio_type === "silence" || cinematic.audio_type === "silence")
+                    ? `<div class="silent-beat"><i data-lucide="volume-x" style="width: 14px; height: 14px; color: var(--rose);"></i> [Silent Beat / Visual Pacing Break]</div>`
+                    : `
+                        <div class="dialogue-bubble">
+                            <div class="badge-row" style="margin-bottom: 0.5rem;">
+                                <span class="meta-badge badge-character"><i data-lucide="mic" style="width: 10px; height: 10px;"></i> ${charName || 'Narrator'}</span>
+                            </div>
+                            <p style="font-style: italic; font-weight: 400; color: #e2e8f0;">"${txt}"</p>
+                        </div>
+                    `;
+
+                const rightCol = `
+                    <div class="screenplay-audio" style="flex: 2.5; display: flex; flex-direction: column; justify-content: center; gap: 1rem;">
+                        <div class="badge-row">
+                            <span class="meta-badge badge-scene">Scene ${i + 1}</span>
+                            <span class="meta-badge badge-duration"><i data-lucide="clock" style="width: 10px; height: 10px;"></i> ${duration}s</span>
+                            ${cinematic.shot_type ? `<span class="meta-badge badge-type" style="background: rgba(234, 179, 8, 0.15); color: #facc15;"><i data-lucide="camera" style="width: 10px; height: 10px;"></i> ${cinematic.shot_type}</span>` : ''}
+                            ${cinematic.location_id ? `<span class="meta-badge badge-location" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;"><i data-lucide="map-pin" style="width: 10px; height: 10px;"></i> ${cinematic.location_id}</span>` : ''}
+                        </div>
+                        <p class="scene-text" style="font-weight: 500; font-size: 0.95rem; color: #cbd5e1;">
+                            ${videoData.original_image_descriptions && videoData.original_image_descriptions[i]
+                        ? videoData.original_image_descriptions[i]
+                        : (Array.isArray(currentDraft.image_descriptions?.[i]) ? currentDraft.image_descriptions[i][0] : currentDraft.image_descriptions?.[i]) || txt}
+                        </p>
+                        ${dialogueBlock}
+                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: #94a3b8; font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
+                    </div>
+                `;
+
+                return `<div class="screenplay-card" style="align-items: flex-start; padding: 1.5rem; background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border);">${leftCol}${rightCol}</div>`;
+            }).join('');
+
+            // If paused at Stage 3 for review, show the Review Action Bar
+            if (currentDraft.stage === 3) {
+                content.innerHTML += `
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Visual Assets</h4>
+                            <p style="color: var(--text-muted); font-size: 0.85rem;">Review the rendered scene visuals. You can approve to proceed to final assembly.</p>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="advanceStage(5)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Assemble Media</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            lucide.createIcons();
+        }
+
+        async function triggerGenVideo() {
+            if (!currentDraft) return;
+
+            const videoData = currentDraft._video_data;
+            const images = videoData?.images || [];
+            if (images.length === 0) {
+                alert("No images available to animate.");
+                return;
+            }
+
+            const convertToVideo = images.map((_, i) => ({ pos: i + 1 }));
+
+            const payload = {
+                idea_id: currentDraft.idea_id,
+                version_id: currentDraft.version,
+                video_engine: "start_end_framing",
+                convert_to_video: convertToVideo
+            };
+
+            const btn = document.getElementById('gen-video-btn');
+            const originalContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.innerHTML = `<i data-lucide="loader-2" class="spin" style="width: 15px; height: 15px; margin-right: 5px;"></i> Converting...`;
+            lucide.createIcons();
+
+            try {
+                const response = await fetch('/draft', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.message || "Failed to trigger video generation");
+                }
+
+                alert("Scene video rendering successfully queued!");
+            } catch (err) {
+                console.error("Error triggering video generation:", err);
+                alert("Error: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.innerHTML = originalContent;
+                lucide.createIcons();
+            }
+        }
+
+        function renderProduction() {
+            const content = document.getElementById('production-content');
+            const videoData = currentDraft._video_data;
+            const configUrl = currentDraft.remotion_config;
+
+            let html = '';
+
+            if (videoData?.bgm) {
+                html += `
+                    <div class="audio-preview-panel">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <i data-lucide="music" style="width: 24px; height: 24px; color: var(--accent);"></i>
+                            <div>
+                                <h4 style="font-weight: 700;">Curated Soundtrack</h4>
+                                <p style="font-size: 0.8rem; color: var(--secondary);">${videoData.bgm.name || 'Selected Background Track'}</p>
+                            </div>
+                        </div>
+                        <audio controls src="${videoData.bgm.url}" style="width: 100%; margin-top: 0.5rem;"></audio>
+                    </div>
+                `;
+            }
+
+            if (configUrl) {
+                const b64_config = btoa(configUrl);
+                const preview_url = `http://173.255.237.181:3001/?c=${b64_config}`;
+                html += `
+                    <div class="audio-preview-panel" style="border-color: rgba(139, 92, 246, 0.15); background: rgba(139, 92, 246, 0.02);">
+                        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                            <i data-lucide="video" style="width: 24px; height: 24px; color: var(--accent);"></i>
+                            <div>
+                                <h4 style="font-weight: 700;">Remotion Visual Timeline</h4>
+                                <p style="font-size: 0.8rem; color: var(--secondary);">The timing, transitions, and audio sync blueprints are fully compiled.</p>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <a href="${preview_url}" target="_blank" class="action-btn">
+                                <i data-lucide="external-link"></i> Launch Premium Studio Previewer
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += '<p class="empty-state">Audio compositions and timeline sync blueprints not yet compiled.</p>';
+            }
+
+            content.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        function renderFinal() {
+            const content = document.getElementById('final-content');
+            if (currentDraft.generated_video) {
+                content.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 1.5rem; width: 100%;">
+                        <div class="device-simulator-container">
+                            <div class="phone-frame">
+                                <div class="phone-notch"></div>
+                                <video class="phone-video" controls src="${currentDraft.generated_video}"></video>
+                            </div>
+                        </div>
+                        <a href="${currentDraft.generated_video}" download class="action-btn" style="background: linear-gradient(135deg, var(--emerald) 0%, #059669 100%); box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.5);">
+                            <i data-lucide="download"></i> Download Master Video Export (.mp4)
+                        </a>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = '<div class="empty-state"><i data-lucide="clock" class="animate-pulse" style="width: 3rem; height: 3rem;"></i><p>Assembling Master Video Export. Please stand by...</p></div>';
+            }
+            lucide.createIcons();
+        }
+
+        function showError(msg) {
+            document.getElementById('loading-overlay').style.display = 'none';
+            document.getElementById('error-state').style.display = 'block';
+            document.getElementById('error-msg').textContent = msg;
+        }
+
+        function openImageModal(url) {
+            const modal = document.getElementById("imageModal");
+            const modalImg = document.getElementById("modalImage");
+            modal.style.display = "flex";
+            modalImg.src = url;
+        }
+
+        function closeImageModal() {
+            const modal = document.getElementById("imageModal");
+            modal.style.display = "none";
+        }
+
+        // --- Interactive Editing & Patching (Review Mode) ---
+        async function patchStage(field) {
+            if (field === 'story') {
+                const edits = {};
+                let hasChanges = false;
+
+                const { idea_id, version } = getQueryParams();
+                const videoData = currentDraft._video_data || {};
+                const originalTextArray = videoData.text || currentDraft.story.split('\n').filter(s => s.trim());
+
+                originalTextArray.forEach((originalText, i) => {
+                    const inputEl = document.getElementById(`scene-text-${i}`);
+                    if (inputEl && inputEl.innerText.trim() !== originalText.trim()) {
+                        edits[i.toString()] = inputEl.innerText.trim();
+                        hasChanges = true;
+                    }
+                });
+
+                if (!hasChanges) {
+                    alert("No edits detected!");
+                    return;
+                }
+
+                alert("Patching timeline... please wait.");
+
+                try {
+                    await fetch('/draft', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            idea_id: idea_id,
+                            version_id: version,
+                            edit_story_sentence: edits,
+                            edit_inplace: true
+                        })
+                    });
+
+                    alert("Script saved surgically! Refreshing draft...");
+                    fetchDraft(); // Reload the data
+                } catch (e) {
+                    alert("Error saving edits");
+                }
+            }
+        }
+
+        async function advanceStage(targetStage) {
+            alert(`Advancing to Stage ${targetStage}... Pipeline will now resume.`);
+
+            const { idea_id, version } = getQueryParams();
+
+            // Kick off the generation with the new stop_at_stage
+            await fetch('/draft', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    idea_id: idea_id,
+                    version_id: version,
+                    stop_at_stage: targetStage
+                })
+            });
+
+            // Reload page to start polling again
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+
+        let logPollInterval = null;
+        let lastLogContent = "";
+
+        async function fetchLogs() {
+            const { idea_id, version } = getQueryParams();
+            if (!idea_id) return;
+
+            try {
+                fetchDraftStatusLight();
+
+                const res = await fetch(`/draft/logs/${idea_id}/${version}`);
+                if (!res.ok) throw new Error("Failed to fetch logs");
+                const data = await res.json();
+
+                const logBody = document.getElementById('log-body');
+                const statusDot = document.getElementById('log-status-dot');
+
+                if (data.status === "success" || data.status === "not_found") {
+                    const logs = data.logs || "No logs recorded yet.";
+
+                    if (logs !== lastLogContent) {
+                        lastLogContent = logs;
+                        logBody.textContent = logs;
+                        logBody.scrollTop = logBody.scrollHeight;
+                    }
+                }
+
+                if (currentDraft) {
+                    const isFinished = currentDraft.stage === 8 || currentDraft.stage === 100;
+                    if (isFinished) {
+                        statusDot.classList.remove('active');
+                        stopLogPolling();
+                    } else {
+                        statusDot.classList.add('active');
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching logs:", err);
+            }
+        }
+
+        async function fetchDraftStatusLight() {
+            const { idea_id, version } = getQueryParams();
+            if (!idea_id) return;
+            try {
+                const response = await fetch(`/draft/${idea_id}/${version}`);
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (currentDraft && data.stage !== currentDraft.stage) {
+                    currentDraft = data;
+                    if (typeof currentDraft.video_data === 'string' && currentDraft.video_data) {
+                        try {
+                            currentDraft._video_data = JSON.parse(currentDraft.video_data);
+                        } catch (e) { }
+                    }
+                    renderDraftInfo();
+                    renderStepper();
+                    navigateToStage(currentDraft.stage === -1 ? 0 : currentDraft.stage);
+                }
+            } catch (e) {
+                console.error("Error checking light status:", e);
+            }
+        }
+
+        function startLogPolling() {
+            if (logPollInterval) return;
+            fetchLogs();
+            logPollInterval = setInterval(fetchLogs, 2000);
+        }
+
+        function stopLogPolling() {
+            if (logPollInterval) {
+                clearInterval(logPollInterval);
+                logPollInterval = null;
+            }
+        }
+
+        function toggleLogConsole() {
+            const consoleEl = document.getElementById('log-console');
+            const btnEl = document.getElementById('toggle-log-btn');
+
+            consoleEl.classList.toggle('minimized');
+
+            if (consoleEl.classList.contains('minimized')) {
+                btnEl.innerHTML = '<i data-lucide="maximize-2" id="toggle-log-icon" style="width: 14px; height: 14px;"></i> Expand';
+            } else {
+                btnEl.innerHTML = '<i data-lucide="minimize-2" id="toggle-log-icon" style="width: 14px; height: 14px;"></i> Minimize';
+            }
+            lucide.createIcons();
+        }
+
+        function copyLogs() {
+            const logBody = document.getElementById('log-body');
+            navigator.clipboard.writeText(logBody.textContent)
+                .then(() => {
+                    console.log("Logs successfully copied to clipboard.");
+                })
+                .catch(err => {
+                    console.error("Could not copy logs: ", err);
+                });
+        }
+
+        // Boot
+        fetchDraft();
+    </script>
+</body>
+
+</html>

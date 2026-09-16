@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baasha | Moodboard Dashboard</title>
+    <link rel="stylesheet" href="moodboard/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body class="dashboard-layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">BAASHA</div>
+            <div class="tagline">Moodboard Studio</div>
+        </div>
+
+        <div class="sidebar-content">
+            <div class="input-group">
+                <label for="topic">Topic</label>
+                <input type="text" id="topic" placeholder="e.g. 1950s Havana Nights"
+                    value="Cyberpunk market in Old Delhi">
+            </div>
+            <div class="input-group">
+                <label for="ctx">Context <span>(Optional)</span></label>
+                <textarea id="ctx"
+                    placeholder="Narrative, lighting, mood...">Monsoon rain, crowded, smell of spices mixed with ozone</textarea>
+            </div>
+            <div class="input-group">
+                <label for="num_styles">Variations</label>
+                <div class="num-picker">
+                    <input type="number" id="num_styles" min="1" max="5" value="3">
+                </div>
+            </div>
+            <button id="generate-btn" class="primary-btn">Generate Styles</button>
+        </div>
+
+        <div class="sidebar-footer">
+            <p>&copy; 2026 Baasha AI</p>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="content-header">
+            <div class="current-topic-info">
+                <span class="label">Current Project</span>
+                <h2 id="display-topic">New Moodboard</h2>
+            </div>
+            <div class="header-actions">
+                <div id="status-indicator" class="status-badge hidden">
+                    <span class="loader-sm"></span>
+                    <span id="status-text">Brainstorming...</span>
+                </div>
+            </div>
+        </header>
+
+        <div id="welcome-state" class="empty-state">
+            <div class="empty-icon">✧</div>
+            <h3>Ready to brainstorm?</h3>
+            <p>Configure your topic in the sidebar and generate unique visual styles for your production.</p>
+        </div>
+
+        <div id="results-area" class="hidden">
+            <section class="comparison-section">
+                <div class="section-header">
+                    <h3>Style Comparison</h3>
+                </div>
+                <div class="table-container">
+                    <table id="comparison-table">
+                        <thead>
+                            <tr>
+                                <th class="w-25">Style Name</th>
+                                <th class="w-50">Artistic Reasoning</th>
+                                <th class="w-25">Preview</th>
+                            </tr>
+                        </thead>
+                        <tbody id="comparison-body">
+                            <!-- Comparison rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="gallery-section">
+                <div class="section-header">
+                    <h3>Visual Grids</h3>
+                </div>
+                <div id="results-grid" class="results-grid">
+                    <!-- Cards will be injected here -->
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="moodboard/app.js"></script>
+</body>
+
+</html>
