@@ -4,7 +4,7 @@ from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool import McpToolset, SseConnectionParams
 from google.genai import types
 
-os.environ["GEMINI_API_KEY"] = "AIzaSyCmKkswlaMbn039z-wdx8IkADslR8DJVTs"
+os.environ["GEMINI_API_KEY"] = ""
 
 
 async def promote_images_to_artifacts(tool, args, tool_context, tool_response):
