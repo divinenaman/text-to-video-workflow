@@ -160,7 +160,7 @@ class ChatInterface:
             self.llm = groq.get_client(key)
             self.llm_service = LLM_GROQ
             self.rate_limiter = {"timeout": 8, "last_req": None}
-            self.llm_name = "llama-3.1-8b-instant"
+            self.llm_name = "qwen/qwen3.8-27b"
             self.llm_name_vision = ""
             self.ctx = []
 
@@ -337,9 +337,12 @@ class ChatInterface:
             img = None
             text = p
 
-            if isinstance(p, Img):
-                img = f"data:image/png;base64," + encode_image(p._bytes)
-                text = p.text
+            if isinstance(text, list) and len(text) > 0:
+                text = text[0]
+
+            if isinstance(text, Img):
+                img = f"data:image/png;base64," + encode_image(text._bytes)
+                text = text.text
 
             t = groq.fetch_text(
                 self.llm,

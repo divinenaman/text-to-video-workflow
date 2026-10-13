@@ -24,7 +24,7 @@ def fetch_text(client, ctx, text, img=None, system=None, model=None):
 
     for c in ctx:
         msg.append(mk_text(c[0], c[1]))
-
+    
     if text:
         if img:
             text = [
@@ -35,12 +35,7 @@ def fetch_text(client, ctx, text, img=None, system=None, model=None):
 
     chat_completion = client.chat.completions.create(
         messages=msg,
-        model=model
-        or (
-            "meta-llama/llama-4-scout-17b-16e-instruct"
-            if img
-            else "llama-3.1-8b-instant"
-        ),
+        model=model or "qwen/qwen3.8-27b"
     )
 
     return chat_completion.choices[0].message.content
