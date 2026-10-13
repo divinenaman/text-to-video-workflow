@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Catalogue</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        form {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #e9e9e9;
+        }
+
+        form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        form input[type="text"],
+        form textarea {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        form button {
+            background-color: #5cb85c;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        form button:hover {
+            background-color: #4cae4c;
+        }
+
+        .video-catalogue {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .video-item {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .video-item video {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .video-item p {
+            margin: 0;
+            font-size: 0.9em;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h2>Video Catalogue</h2>
+        <form id="postForm">
+            <!-- Add input fields here based on the data structure you plan to POST -->
+            <!-- Example: -->
+            <div>
+                <label for="name">Link:</label>
+                <input type="text" id="link" name="link">
+            </div>
+            <button type="submit">Scrape</button>
+        </form>
+
+        <h2>Video Catalogue</h2>
+        <div class="video-catalogue" id="videoCatalogue">
+            <!-- Video items will be loaded here by JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        const catalogueDiv = document.getElementById('videoCatalogue');
+
+        // Function to load catalogue items
+        function loadCatalogue(data) {
+            if (data && data.result && Array.isArray(data.result)) {
+                data.result.forEach(item => {
+                    const videoItemDiv = document.createElement('div');
+                    videoItemDiv.classList.add('video-item');
+
+                    const videoElement = document.createElement('video');
+                    videoElement.src = item.video_link;
+                    videoElement.controls = true;
+                    videoElement.loop = true; // Added loop for continuous playback
+                    videoElement.muted = true; // Muted by default for autoplay (optional)
+                    videoElement.autoplay = true; // Autoplay (optional, might not work on all browsers)
+
+                    const descriptionPara = document.createElement('p');
+                    descriptionPara.textContent = item.desp;
+
+                    videoItemDiv.appendChild(videoElement);
+                    videoItemDiv.appendChild(descriptionPara);
+                    catalogueDiv.appendChild(videoItemDiv);
+                });
+            } else {
+                catalogueDiv.innerHTML = '<p>No video data available.</p>';
+            }
+        }
+
+        // Load initial data
+        fetch("/scrape/videos").then(x => x.json()).then(x => loadCatalogue(x))
+
+        // Handle form submission
+        const postForm = document.getElementById('postForm');
+        postForm.addEventListener('submit', function (event) {
+            event.preventDefault(); // Prevent the default form submission
+
+            // Replace with the actual endpoint URL
+            const endpointUrl = '/scrape/videos'; // <-- **Replace with your endpoint**
+
+            // Gather data from form (adjust based on your form fields)
+            const formData = new FormData(postForm);
+            const postData = {};
+            formData.forEach((value, key) => {
+                postData[key] = value;
+            });
+
+            if (!postData?.link) return;
+            postData.store = true;
+            postData.store_scraper = true;
+
+            // Convert to JSON
+            const jsonData = JSON.stringify(postData);
+
+            // Perform the POST request
+            fetch(endpointUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 'X-Requested-With': 'XMLHttpRequest', // Often useful for API calls
+                    // Add any other necessary headers (e.g., API keys, auth tokens)
+                },
+                body: jsonData
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json(); // Or response.text() if endpoint doesn't return JSON
+                })
+                .then(data => {
+                    console.log('Success:', data);
+                    alert('Data successfully posted! Check console for response.');
+                    // Handle successful response (e.g., update page, show message)
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                    alert('Error posting data. Check console for details.');
+                    // Handle errors (e.g., show error message)
+                });
+        });
+
+    </script>
+
+</body>
+
+</html>

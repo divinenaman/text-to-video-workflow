@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baasha | Image Layer Profiler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #fcfcfc;
+            --sidebar-bg: #ffffff;
+            --text-primary: #000000;
+            --text-secondary: #5a5a5a;
+            --text-dim: #999999;
+            --border-color: #eeeeee;
+            --border-bold: #000000;
+            --accent: #000000;
+            --sidebar-width: 340px;
+            --font-ui: 'Inter', sans-serif;
+            --font-display: 'Space Grotesk', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 40px 24px;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 1.5rem;
+            letter-spacing: -0.05em;
+            margin-bottom: 4px;
+        }
+
+        .tagline {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 48px;
+        }
+
+        .input-group {
+            margin-bottom: 24px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+            color: var(--text-dim);
+        }
+
+        textarea, input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            font-family: inherit;
+            font-size: 0.9rem;
+            background: #fafafa;
+        }
+
+        textarea { height: 100px; resize: none; }
+
+        input[type="range"] {
+            width: 100%;
+            margin-top: 8px;
+            accent-color: var(--accent);
+        }
+
+        .primary-btn {
+            width: 100%;
+            background-color: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 16px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            margin-top: 24px;
+            transition: opacity 0.2s;
+        }
+
+        .primary-btn:hover { opacity: 0.9; }
+        .primary-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex-grow: 1;
+            padding: 60px;
+        }
+
+        header {
+            margin-bottom: 48px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        header h1 {
+            font-family: var(--font-display);
+            font-size: 2rem;
+        }
+
+        .status-pill {
+            background: #000;
+            color: #fff;
+            padding: 6px 16px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 100px;
+            display: none;
+        }
+
+        /* Results Grid */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 40px;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: #fdfdfd;
+        }
+
+        .card-header h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+        }
+
+        .img-display {
+            width: 100%;
+            background: #f0f0f0;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .img-display img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .checkerboard {
+            background-image:
+                linear-gradient(45deg, #eee 25%, transparent 25%),
+                linear-gradient(-45deg, #eee 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #eee 75%),
+                linear-gradient(-45deg, transparent 75%, #eee 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .step-label {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 4px 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            border-radius: 4px;
+        }
+
+        .hidden { display: none; }
+
+        /* Loader */
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Parallax Preview */
+        .parallax-stage {
+            width: 100%;
+            height: 500px;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .parallax-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 130%; /* Overscan for panning */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            pointer-events: none;
+        }
+
+        .background-layer {
+            z-index: 10;
+        }
+
+        .foreground-layer {
+            z-index: 20;
+            filter: drop-shadow(0 20px 30px rgba(0,0,0,0.5));
+        }
+
+        @keyframes pan-bg {
+            from { transform: translateX(0); }
+            to { transform: translateX(-15%); }
+        }
+
+        @keyframes pan-fg {
+            from { transform: translateX(0); }
+            to { transform: translateX(-25%); }
+        }
+
+        .animate-bg {
+            animation: pan-bg 8s ease-in-out infinite alternate;
+        }
+
+        .animate-fg {
+            animation: pan-fg 8s ease-in-out infinite alternate;
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            margin-top: 40px;
+            border-top: 1px dashed var(--border-color);
+        }
+
+    </style>
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo">BAASHA</div>
+        <div class="tagline">Layer Profiler</div>
+
+        <div class="sidebar-content">
+            <div class="input-group">
+                <label for="prompt">Base Prompt</label>
+                <textarea id="prompt" placeholder="Describe the scene..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="image_url">Initial Image URL (Skip for AI gen)</label>
+                <input type="text" id="image_url" placeholder="https://...">
+            </div>
+
+            <div class="input-group">
+                <label for="depth">Outlining Depth: <span id="depth-val">1</span></label>
+                <input type="range" id="depth" min="1" max="5" value="1">
+            </div>
+
+            <div class="input-group">
+                <label for="aspect_ratio">Aspect Ratio</label>
+                <select id="aspect_ratio" style="width: 100%; padding: 12px; border: 1px solid var(--border-color); background: #fafafa;">
+                    <option value="9:16">Portrait (9:16)</option>
+                    <option value="16:9">Landscape (16:9)</option>
+                    <option value="21:9">Ultra-Wide (21:9)</option>
+                    <option value="1:1">Square (1:1)</option>
+                </select>
+            </div>
+
+            <button id="generate-btn" class="primary-btn">Generate Layers</button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header>
+            <div>
+                <p style="font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 4px;">Testing Environment</p>
+                <h1>Depth Extraction</h1>
+            </div>
+            <div id="status" class="status-pill">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="loader"></div>
+                    <span id="status-text">Processing...</span>
+                </div>
+            </div>
+        </header>
+
+        <div id="results" class="results-grid">
+            <!-- Initial empty state -->
+            <div style="grid-column: 1 / -1; text-align: center; padding-top: 100px; color: var(--text-dim);">
+                <p>Enter a prompt and click generate to start the profiler.</p>
+            </div>
+        </div>
+
+        <div id="parallax-preview-section" class="hidden">
+            <div class="preview-header">
+                <h2 style="font-family: var(--font-display); font-size: 1.2rem;">Live Parallax Preview</h2>
+                <span style="font-size: 0.7rem; color: var(--text-dim);">SIMULATING DEPTH & PANNING</span>
+            </div>
+            <div class="card" style="margin-top: 12px; border: 2px solid #000;">
+                <div class="parallax-stage">
+                    <div id="bg-view" class="parallax-layer background-layer animate-bg"></div>
+                    <div id="fg-view" class="parallax-layer foreground-layer animate-fg"></div>
+                </div>
+                <div class="card-header" style="background: #000; color: #fff;">
+                    <h3 style="color: #fff; font-size: 0.7rem;">Cinematic Multi-Speed Translation (FG: 1.6x, BG: 1.0x)</h3>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const depthSlider = document.getElementById('depth');
+        const depthVal = document.getElementById('depth-val');
+        const generateBtn = document.getElementById('generate-btn');
+        const resultsArea = document.getElementById('results');
+        const statusPill = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+
+        depthSlider.oninput = function() {
+            depthVal.innerHTML = this.value;
+        }
+
+        generateBtn.onclick = async function() {
+            const prompt = document.getElementById('prompt').value;
+            const imageUrl = document.getElementById('image_url').value;
+            const depth = parseInt(depthSlider.value);
+            const aspect_ratio = document.getElementById('aspect_ratio').value;
+
+            if (!prompt && !imageUrl) {
+                alert("Please provide either a prompt or an image URL.");
+                return;
+            }
+
+            // UI State
+            generateBtn.disabled = true;
+            statusPill.style.display = 'block';
+            resultsArea.innerHTML = '';
+            statusText.innerText = "Initializing generation...";
+
+            try {
+                const response = await fetch('/api/test/image-layers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, image_url: imageUrl, depth, aspect_ratio })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                renderResults(data);
+
+            } catch (err) {
+                console.error(err);
+                alert("Generation failed: " + err.message);
+            } finally {
+                generateBtn.disabled = false;
+                statusPill.style.display = 'none';
+            }
+        };
+
+        function renderResults(data) {
+            resultsArea.innerHTML = '';
+            const previewSection = document.getElementById('parallax-preview-section');
+            const bgView = document.getElementById('bg-view');
+            const fgView = document.getElementById('fg-view');
+
+            // Base Image
+            const baseCard = createCard("Base Image", data.base_image);
+            resultsArea.appendChild(baseCard);
+
+            // Steps
+            data.steps.forEach(step => {
+                const outlinedCard = createCard(`Outlined #b4b400 (Depth ${step.depth})`, step.outlined);
+                const backgroundCard = createCard(`Inpainted Background (Depth ${step.depth})`, step.background);
+                const layerCard = createCard(`Foreground PNG (Depth ${step.depth})`, step.layer, true);
+
+                resultsArea.appendChild(outlinedCard);
+                resultsArea.appendChild(backgroundCard);
+                resultsArea.appendChild(layerCard);
+
+                // Set up the first layer for the parallax preview
+                if (step.depth === 1) {
+                    previewSection.classList.remove('hidden');
+                    bgView.style.backgroundImage = `url(${step.background})`;
+                    fgView.style.backgroundImage = `url(${step.layer})`;
+                }
+            });
+        }
+
+        function createCard(title, url, isLayer = false) {
+            const div = document.createElement('div');
+            div.className = 'card';
+
+            div.innerHTML = `
+                <div class="card-header">
+                    <h3>${title}</h3>
+                </div>
+                <div class="img-display ${isLayer ? 'checkerboard' : ''}">
+                    <img src="${url}" alt="${title}">
+                    <a href="${url}" target="_blank" class="step-label">View Full</a>
+                </div>
+            `;
+            return div;
+        }
+    </script>
+</body>
+
+</html>

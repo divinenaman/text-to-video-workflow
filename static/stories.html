@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baasha | Viral Story Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&family=Outfit:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0a0a0b;
+            --sidebar-bg: #121214;
+            --card-bg: #1a1a1e;
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1aa;
+            --text-dim: #71717a;
+            --border-color: #27272a;
+            --accent: #f4f4f5;
+            --accent-glow: rgba(255, 255, 255, 0.1);
+            --sidebar-width: 380px;
+            --font-ui: 'Inter', sans-serif;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-branding: 'Outfit', sans-serif;
+            --viral-hook: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            font-family: var(--font-ui);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            padding: 40px 32px;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 100;
+        }
+
+        .logo-container {
+            margin-bottom: 48px;
+        }
+
+        .logo {
+            font-family: var(--font-branding);
+            font-weight: 800;
+            font-size: 1.8rem;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        .tagline {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            margin-top: 4px;
+        }
+
+        .input-group {
+            margin-bottom: 32px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+        }
+
+        textarea,
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            background: #09090b;
+            color: #fff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        textarea:focus,
+        input:focus {
+            outline: none;
+            border-color: #52525b;
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        textarea {
+            height: 160px;
+            resize: none;
+        }
+
+        .primary-btn {
+            width: 100%;
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 20px;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .primary-btn:hover {
+            opacity: 0.95;
+        }
+
+        .primary-btn:active {
+            transform: scale(0.98);
+        }
+
+        .primary-btn:disabled {
+            background: #3f3f46;
+            color: #71717a;
+            cursor: not-allowed;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex-grow: 1;
+            padding: 60px 80px;
+            max-width: 1400px;
+        }
+
+        header {
+            margin-bottom: 64px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        header h1 {
+            font-family: var(--font-display);
+            font-size: 2.8rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #18181b;
+            padding: 10px 20px;
+            border-radius: 100px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border: 1px solid var(--border-color);
+            visibility: hidden;
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+            animation: pulse-ring 1.5s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+            }
+
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+            }
+
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+            }
+        }
+
+        /* Story Flow */
+        .story-timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            position: relative;
+        }
+
+        .story-timeline::before {
+            content: '';
+            position: absolute;
+            left: 24px;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: var(--border-color);
+            z-index: 0;
+        }
+
+        .scene-entry {
+            display: flex;
+            gap: 40px;
+            position: relative;
+            z-index: 1;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: slide-up 0.5s forwards;
+        }
+
+        @keyframes slide-up {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .scene-num {
+            width: 48px;
+            height: 48px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+            color: var(--text-secondary);
+        }
+
+        .scene-entry.is-hook .scene-num {
+            background: var(--viral-hook);
+            border-color: var(--viral-hook);
+            color: #fff;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+        }
+
+        .scene-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px;
+            flex-grow: 1;
+            transition: border-color 0.3s, background 0.3s;
+        }
+
+        .scene-card:hover {
+            border-color: #3f3f46;
+            background: #202024;
+        }
+
+        .scene-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 6px 12px;
+            background: #27272a;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            color: var(--text-dim);
+        }
+
+        .is-hook .scene-badge {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .scene-text {
+            font-size: 1.4rem;
+            line-height: 1.5;
+            font-weight: 400;
+            margin-bottom: 24px;
+            color: #e4e4e7;
+        }
+
+        .scene-text b {
+            font-weight: 800;
+            color: #fff;
+            background: linear-gradient(0deg, var(--accent-glow) 0%, transparent 100%);
+        }
+
+        .scene-text.large {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .image-prompt-area {
+            background: #09090b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px dashed #3f3f46;
+        }
+
+        .prompt-header {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .prompt-content {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            line-height: 1.6;
+        }
+
+        /* Loader */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-top-color: #000;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 120px 0;
+            color: var(--text-dim);
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 24px;
+            opacity: 0.2;
+        }
+    </style>
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo-container">
+            <div class="logo">BAASHA</div>
+            <div class="tagline">Viral Story Studio</div>
+        </div>
+
+        <div class="sidebar-content">
+            <div class="input-group">
+                <label for="prompt">Story Prompt / Idea</label>
+                <textarea id="prompt"
+                    placeholder="e.g. The crazy $22B acquisition of RCB in 2026. Make it feel elite and high stakes."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label for="guidance">Additional Guidance</label>
+                <input type="text" id="guidance" placeholder="e.g. Focus on the emotional impact on fans.">
+            </div>
+
+            <button id="generate-btn" class="primary-btn">
+                <span>Deploy Viral Engine</span>
+            </button>
+            <p style="font-size: 0.65rem; color: var(--text-dim); margin-top: 20px; line-height: 1.4; text-align: center;">
+                <b>Automated Grounding Active:</b> System will perform factual research before generating.
+            </p>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header>
+            <div>
+                <p
+                    style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;">
+                    Diagnostic Flow</p>
+                <h1>Retention Profiler</h1>
+            </div>
+            <div id="status" class="status-badge">
+                <div class="pulse"></div>
+                <span id="status-text">Engine Online</span>
+            </div>
+        </header>
+
+        <div id="results" class="story-timeline">
+            <!-- Initial empty state -->
+            <div class="empty-state">
+                <div class="empty-icon">⚡</div>
+                <p>Configure your prompt in the sidebar to begin.</p>
+                <p style="font-size: 0.8rem; margin-top: 8px;">Processing includes: Viral Hook Analysis, Snappy Pacing
+                    Split, & Visual North Star Gen.</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const generateBtn = document.getElementById('generate-btn');
+        const resultsArea = document.getElementById('results');
+        const statusBadge = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+
+        generateBtn.onclick = async function () {
+            const prompt = document.getElementById('prompt').value;
+            const guidance = document.getElementById('guidance').value;
+
+            if (!prompt) {
+                alert("Please provide a story prompt.");
+                return;
+            }
+
+            // UI State
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = ' <div class="spinner"></div> <span>Generating...</span>';
+            statusBadge.style.visibility = 'visible';
+            statusText.innerText = "Running Viral Sequence...";
+            resultsArea.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/test/viral-story', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, guidance })
+                });
+
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                renderResults(data.story);
+
+            } catch (err) {
+                console.error(err);
+                alert("Generation failed: " + err.message);
+                statusText.innerText = "Error encountered.";
+                statusBadge.querySelector('.pulse').style.background = '#ef4444';
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = '<span>Deploy Viral Engine</span>';
+                statusText.innerText = "Profile Complete";
+            }
+        };
+
+        function renderResults(story) {
+            resultsArea.innerHTML = '';
+
+            story.forEach((scene, index) => {
+                const isHook = index === 0;
+                const div = document.createElement('div');
+                div.className = `scene-entry ${isHook ? 'is-hook' : ''}`;
+                div.style.animationDelay = `${index * 0.1}s`;
+
+                // Handle boldness in text (simple replace)
+                let styledText = scene.text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+                // Determine styling classes from scene.styling
+                const stylingClasses = [];
+                if (scene.styling && scene.styling.includes('large')) stylingClasses.push('large');
+                if (scene.styling && scene.styling.includes('bold')) {
+                    // if not already bolded by **
+                    if (!styledText.includes('<b>')) styledText = `<b>${styledText}</b>`;
+                }
+
+                div.innerHTML = `
+                    <div class="scene-num">${scene.scene}</div>
+                    <div class="scene-card">
+                        <div class="scene-badge">${isHook ? 'Thumb-Stopping Hook' : 'Engagement Phase'}</div>
+                        <div class="scene-text ${stylingClasses.join(' ')}">${styledText}</div>
+                        <div class="image-prompt-area">
+                            <div class="prompt-header">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                Visual North Star
+                            </div>
+                            <div class="prompt-content">${scene.image_prompt || 'No visual guidance generated.'}</div>
+                        </div>
+                    </div>
+                `;
+                resultsArea.appendChild(div);
+            });
+        }
+    </script>
+</body>
+
+</html>

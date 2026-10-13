@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  baashadb:
+    image: postgres:13.12-bookworm
+    container_name: baashadb
+    restart: unless-stopped
+    ports:
+      - "5001:5432"
+    environment:
+      POSTGRES_USER: baasha
+      POSTGRES_PASSWORD: baasha
+      POSTGRES_DB: baashadb
+    volumes:
+      - baasha_db_data:/var/lib/postgresql/data
+    networks:
+      - baasha
+
+  baasha-s3:
+    image: adobe/s3mock:3.11.0
+    container_name: baasha-s3
+    restart: unless-stopped
+    ports:
+      - "9000:9090"
+      - "9090:9090"
+      - "9191:9191"
+    environment:
+      initialBuckets: "baasha-assets,baasha-bgm"
+    volumes:
+      - baasha_s3_data:/tmp/s3mockFileStore
+    networks:
+      - baasha
+
+volumes:
+  baasha_db_data:
+  baasha_s3_data:
+
+networks:
+  baasha:
+    name: baasha
+    external: true

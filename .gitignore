@@ -1,0 +1,12 @@
+__pycache*
+venv
+baasha_pipeline.tar.gz
+tmp
+baasha_pipeline/tmp/
+*.tar.gz
+config.local.ini
+tokens/
+baasha_pipeline/auth/
+baasha_pipeline/publisher/client_secret.json
+baasha_pipeline/publisher/*_token.json
+baasha_pipeline/google_services/baasha-google-api-key.json
