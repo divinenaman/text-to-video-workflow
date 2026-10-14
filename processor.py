@@ -8,6 +8,8 @@ import os
 import random
 import re
 from typing import AsyncIterator
+from types import SimpleNamespace
+from baasha_pipeline.configs import app_config
 from baasha_pipeline.build_scraper import scrape_page
 from hugchat.hugchat import ChatBot
 import requests
@@ -28,6 +30,8 @@ from baasha_pipeline import (
     eachlabs_ai,
     errors,
     fal,
+    cloudflare_flux,
+    pollinations,
 )
 from baasha_pipeline.chatbot import Img
 from uuid import uuid4
@@ -289,6 +293,7 @@ sounds_list = [
 
 def get_word_sound_effects(chatbot, timepoints: Dict[str, List[Tuple[str, int, int]]]):
     import os
+
     cluster = os.environ.get("S3_CLUSTER", "localhost:9000")
     bucket = os.environ.get("BGM_BUCKET", "baasha-bgm")
     protocol = os.environ.get("S3_PROTOCOL", "https")
@@ -1271,6 +1276,26 @@ def image_gen(
             image_engine=image_engine,
         )
 
+    elif image_engine_provider == "cf_flux":
+        gen_image_urls, errors = cloudflare_flux.generate_images(
+            gen_image_descriptors,
+            refs,
+            width=image_config.get("width"),
+            height=image_config.get("height"),
+            aspect_ratio=aspect_ratio,
+            image_resolution=image_resolution,
+        )
+
+    elif image_engine_provider == "pollinations":
+        gen_image_urls, errors = pollinations.generate_images(
+            gen_image_descriptors,
+            refs,
+            width=image_config.get("width"),
+            height=image_config.get("height"),
+            aspect_ratio=aspect_ratio,
+            image_resolution=image_resolution,
+        )
+
     elif image_engine_provider == "goapi_flux1":
         gen_image_urls, errors = goapi_flux.generate_images(
             gen_image_descriptors,
@@ -1655,6 +1680,13 @@ def generate_video_data(
     data_store = {"image_gen": None, "avatar_gen": None, "search_images": None}
     data = data_dict
     vision_chatbot = None
+
+    if primary_voice_detail is None:
+        primary_voice_detail = SimpleNamespace(
+            id=None,
+            tts_toolkit=app_config.get().get("tts_toolkit"),
+            description=None,
+        )
 
     if not data.get("gen_stages"):
         data["gen_stages"] = []

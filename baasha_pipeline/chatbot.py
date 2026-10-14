@@ -4,6 +4,7 @@ from .configs import app_config
 from . import errors
 from .logger import logging
 from . import groq_local as groq
+from . import free_llms
 import time
 from dataclasses import dataclass
 import base64
@@ -16,6 +17,18 @@ LLM_GEMINI = "gemini"
 LLM_GEMMA = "gemma"
 LLM_GROQ = "groq"
 LLM_OLLAMA = "ollama"
+LLM_OPENROUTER = "openrouter"
+LLM_CLOUDFLARE = "cloudflare"
+LLM_STATELESS = (LLM_GROQ, LLM_OPENROUTER, LLM_CLOUDFLARE)
+LLM_PROVIDERS = (
+    LLM_GEMINI,
+    LLM_GEMMA,
+    LLM_HUGCHAT,
+    LLM_GROQ,
+    LLM_OLLAMA,
+    LLM_OPENROUTER,
+    LLM_CLOUDFLARE,
+)
 
 
 def get_keys(k):
@@ -33,6 +46,24 @@ class Img:
 
 def encode_image(img_bytes):
     return base64.b64encode(img_bytes).decode("utf-8")
+
+
+def split_prompt(p):
+    """Normalize a fetch_text payload into ``(text, [image_bytes, ...])``."""
+    texts = []
+    imgs = []
+
+    items = p if isinstance(p, list) else [p]
+    for q in items:
+        if isinstance(q, Img):
+            if q.text:
+                texts.append(q.text)
+            if q._bytes:
+                imgs.append(q._bytes)
+        elif q is not None:
+            texts.append(str(q))
+
+    return "\n".join(texts), imgs
 
 
 def get_global_ctx(req_global_ctx):
@@ -78,7 +109,7 @@ def get_gemini_settings():
 
 class ChatInterface:
     @errors.raise_ctx_errors
-    def __init__(self, llm_name=None, keys=None):
+    def __init__(self, llm_name=None, keys=None, _chain=None):
         self.llm = None
         self.llm_fallback = None
         self.rate_limiter = None
@@ -88,6 +119,16 @@ class ChatInterface:
 
         if not llm_name:
             llm_name = app_config.get().get("primary_chatbot")
+
+        # "groq, openrouter, cloudflare" -> primary + cross-provider fallbacks.
+        # Only splits when every comma-separated part names a known provider,
+        # so a model id that happens to contain a comma is left alone.
+        chain = _chain
+        if chain is None and "," in str(llm_name):
+            names = [n.strip() for n in str(llm_name).split(",") if n.strip()]
+            if len(names) > 1 and all(n.split("#")[0] in LLM_PROVIDERS for n in names):
+                llm_name = names[0]
+                chain = names[1:]
 
         llm_name_split = llm_name.split("#")
 
@@ -169,12 +210,21 @@ class ChatInterface:
 
         elif llm_name.startswith(LLM_OLLAMA):
             # ollama#model_name format
-            model_name = llm_name_split[1] if len(llm_name_split) > 1 else "llama3.2-vision"
+            model_name = (
+                llm_name_split[1] if len(llm_name_split) > 1 else "llama3.2-vision"
+            )
             self.llm_service = LLM_OLLAMA
             self.llm_name = model_name
-            self.ollama_host = app_config.get().get("auth").get("ollama_host", "http://localhost:11434")
+            self.ollama_host = (
+                app_config.get()
+                .get("auth")
+                .get("ollama_host", "http://localhost:11434")
+            )
             self.ctx = []
-            self.rate_limiter = {"timeout": 0, "last_req": None}  # no rate limit for local
+            self.rate_limiter = {
+                "timeout": 0,
+                "last_req": None,
+            }  # no rate limit for local
 
             # Test connection
             try:
@@ -182,8 +232,68 @@ class ChatInterface:
             except Exception as e:
                 logging.error(f"BaashaChatInterface: Ollama model check failed - {e}")
 
+        elif llm_name_split[0] == LLM_OPENROUTER:
+            # openrouter#<model> format, defaults to the free-models router
+            if not keys:
+                keys = get_keys("openrouter_key")
+            keys = [k for k in (keys or []) if k]
+
+            if not keys:
+                raise Exception(
+                    "BaashaChatInterface: OpenRouter key not found! "
+                    "Set OPENROUTER_KEY in config.secrets.ini (free, no card)."
+                )
+
+            self.llm_service = LLM_OPENROUTER
+            self.llm = keys[0]
+            self.llm_name = (
+                llm_name_split[1]
+                if len(llm_name_split) > 1
+                else free_llms.OPENROUTER_DEFAULT_MODEL
+            )
+            self.ctx = []
+            # free tier is 20 requests/min across all :free models
+            self.rate_limiter = {"timeout": 3, "last_req": None}
+
+            if len(keys) > 1:
+                self.llm_fallback = ChatInterface(llm_name, keys[1:])
+
+        elif llm_name_split[0] == LLM_CLOUDFLARE:
+            # cloudflare#@cf/<model> format
+            if not keys:
+                keys = get_keys("cloudflare_token")
+            keys = [k for k in (keys or []) if k]
+
+            if not keys:
+                raise Exception(
+                    "BaashaChatInterface: Cloudflare token not found! "
+                    "Set CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID in "
+                    "config.secrets.ini (free, no card)."
+                )
+
+            self.llm_service = LLM_CLOUDFLARE
+            self.llm = keys[0]
+            self.llm_account_id = get_keys("cloudflare_account_id")[0] or ""
+            self.llm_name = (
+                llm_name_split[1]
+                if len(llm_name_split) > 1
+                else free_llms.CLOUDFLARE_DEFAULT_MODEL
+            )
+            self.ctx = []
+            # free tier is 10k Neurons/day, ~300 req/min
+            self.rate_limiter = {"timeout": 1, "last_req": None}
+
+            if len(keys) > 1:
+                self.llm_fallback = ChatInterface(llm_name, keys[1:])
+
         else:
             raise Exception(f"BaashaChatInterface: Model ({llm_name}) not found!!")
+
+        if chain:
+            tail = self
+            while tail.llm_fallback:
+                tail = tail.llm_fallback
+            tail.llm_fallback = ChatInterface(chain[0], _chain=chain[1:])
 
     def _ollama_check_model(self, model_name):
         """Check if model exists in Ollama, pull if not."""
@@ -237,7 +347,7 @@ class ChatInterface:
                 f"BaashaChatInterface: syncing context prompt to {self.llm_fallback.llm_name}"
             )
 
-            if self.llm_fallback.llm_service == LLM_GROQ and self.ctx:
+            if self.llm_fallback.llm_service in LLM_STATELESS and self.ctx:
                 self.llm_fallback.ctx = self.ctx.copy()
                 self.llm_fallback.sync_ctx()
 
@@ -374,6 +484,15 @@ class ChatInterface:
 
             return t
 
+        elif self.llm_service in (LLM_OPENROUTER, LLM_CLOUDFLARE):
+            return self._free_fetch_text(
+                p,
+                is_context=is_context,
+                append_context=append_context,
+                system_prompt=system_prompt,
+                custom_model=custom_model,
+            )
+
         elif self.llm_service == LLM_OLLAMA:
             return self._ollama_fetch_text(
                 p,
@@ -456,6 +575,73 @@ class ChatInterface:
 
         raise Exception("BaashaChatInterface: Model not found!!")
 
+    def _free_fetch_text(
+        self,
+        p,
+        is_context: bool = False,
+        append_context: bool = False,
+        system_prompt: Optional[str] = None,
+        custom_model: Optional[str] = None,
+    ):
+        """Dispatch to the free OpenAI-compatible providers (OpenRouter / Cloudflare)."""
+        if not self.llm:
+            raise Exception(
+                f"BaashaChatInterface: {self.llm_name} API key not configured"
+            )
+
+        text, imgs = split_prompt(p)
+        system = system_prompt or get_global_ctx(self.global_ctx)
+        model = custom_model or self.llm_name
+
+        try:
+            if self.llm_service == LLM_OPENROUTER:
+                fallbacks = None
+                if (
+                    custom_model is None
+                    and self.llm_name == free_llms.OPENROUTER_DEFAULT_MODEL
+                ):
+                    fallbacks = free_llms.OPENROUTER_MODEL_FALLBACKS
+                t = free_llms.openrouter_fetch_text(
+                    self.llm, self.ctx, text, imgs, system, model, fallbacks
+                )
+            else:
+                t = free_llms.cloudflare_fetch_text(
+                    self.llm,
+                    self.llm_account_id,
+                    self.ctx,
+                    text,
+                    imgs,
+                    system,
+                    model,
+                )
+        except Exception as e:
+            logging.error(f"BaashaChatInterface {self.llm_name}: {e}")
+            if self.llm_fallback:
+                return self.llm_fallback.fetch_text(
+                    p, system_prompt=system_prompt, custom_model=custom_model
+                )
+            raise
+
+        if is_context and append_context and self.ctx:
+            self.ctx.append({"role": "user", "content": text})
+            self.ctx.append({"role": "assistant", "content": t if t else "no reponse"})
+        elif is_context:
+            self.ctx = [{"role": "user", "content": text}]
+            self.ctx.append({"role": "assistant", "content": t if t else "no reponse"})
+
+        if is_context:
+            self.sync_ctx()
+
+        if not t and self.llm_fallback:
+            return self.llm_fallback.fetch_text(
+                p, system_prompt=system_prompt, custom_model=custom_model
+            )
+
+        if not t:
+            raise Exception("BaashaChatInterface: Generation Failed!!")
+
+        return t
+
     def _ollama_encode_image(self, img_bytes):
         """Encode image bytes to base64 for Ollama."""
         return base64.b64encode(img_bytes).decode("utf-8")
@@ -487,21 +673,25 @@ class ChatInterface:
         # Handle image input
         if isinstance(p, Img):
             img_b64 = self._ollama_encode_image(p._bytes)
-            messages.append({
-                "role": "user",
-                "content": p.text,
-                "images": [img_b64],
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": p.text,
+                    "images": [img_b64],
+                }
+            )
         elif isinstance(p, list):
             # Handle list of messages (multimodal)
             for q in p:
                 if isinstance(q, Img):
                     img_b64 = self._ollama_encode_image(q._bytes)
-                    messages.append({
-                        "role": "user",
-                        "content": q.text,
-                        "images": [img_b64],
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": q.text,
+                            "images": [img_b64],
+                        }
+                    )
                 else:
                     messages.append({"role": "user", "content": str(q)})
         else:
@@ -531,11 +721,19 @@ class ChatInterface:
             # Update context
             if is_context:
                 if append_context and self.ctx:
-                    self.ctx.append({"role": "user", "content": str(p) if not isinstance(p, Img) else p.text})
+                    self.ctx.append(
+                        {
+                            "role": "user",
+                            "content": str(p) if not isinstance(p, Img) else p.text,
+                        }
+                    )
                     self.ctx.append({"role": "assistant", "content": text})
                 elif is_context:
                     self.ctx = [
-                        {"role": "user", "content": str(p) if not isinstance(p, Img) else p.text},
+                        {
+                            "role": "user",
+                            "content": str(p) if not isinstance(p, Img) else p.text,
+                        },
                         {"role": "assistant", "content": text},
                     ]
 
@@ -578,6 +776,14 @@ class ChatInterface:
         # query hugchat
         llms = hug_chat.hugchat_model_index_list
         arr = arr + list(map(lambda x: LLM_HUGCHAT + "#" + str(x), llms))
+
+        # free-tier providers (only listed when a key is configured)
+        if any(get_keys("groq_key")):
+            arr.append(LLM_GROQ)
+        if any(get_keys("openrouter_key")):
+            arr.append(LLM_OPENROUTER)
+        if any(get_keys("cloudflare_token")):
+            arr.append(LLM_CLOUDFLARE)
 
         # add ollama models
         try:

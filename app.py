@@ -10,6 +10,8 @@ config = configparser.ConfigParser()
 config.read("config.ini")
 if os.path.exists("config.local.ini"):
     config.read("config.local.ini")
+if os.path.exists("config.secrets.ini"):
+    config.read("config.secrets.ini")
 
 log_file = config.get("LOGGING", "LOG_FILE", fallback="/tmp/baasha-service-api.log")
 log_level_str = config.get("LOGGING", "LOG_LEVEL", fallback="INFO")

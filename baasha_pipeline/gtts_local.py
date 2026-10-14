@@ -3,8 +3,8 @@ from . import errors
 
 
 @errors.log_ctx_errors
-def tts(text, outfile):
-    a = gTTS(text, lang="en")
+def tts(text, outfile, lang="en"):
+    a = gTTS(text, lang=lang)
     a.save(outfile)
     return outfile
 

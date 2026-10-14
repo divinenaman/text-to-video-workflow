@@ -174,10 +174,13 @@ def init_baasha():
     config.read("config.ini")
     if os.path.exists("config.local.ini"):
         config.read("config.local.ini")
+    if os.path.exists("config.secrets.ini"):
+        config.read("config.secrets.ini")
 
     # Load secrets and configs into baasha_pipeline_config
     if "ENV" in config:
         baasha_pipeline_config.set("tts_toolkit", config["TTS"]["TOOLKIT"])
+        baasha_pipeline_config.set("tts_lang", config["TTS"].get("LANG", "en"))
         baasha_pipeline_config.set("coqui_server", config["TTS"]["COQUI"])
         baasha_pipeline_config.set(
             "primary_chatbot", config["PREFS"]["PRIMARY_CHATBOT"]
@@ -216,6 +219,20 @@ def init_baasha():
         )
         baasha_pipeline_auth_config["groq_key"] = (
             config["SECRETS"].get("GROQ_KEY", "").split(", ")
+        )
+        baasha_pipeline_auth_config["openrouter_key"] = [
+            k.strip()
+            for k in config["SECRETS"].get("OPENROUTER_KEY", "").split(",")
+            if k.strip()
+        ]
+        baasha_pipeline_auth_config["cloudflare_token"] = (
+            config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").strip()
+        )
+        baasha_pipeline_auth_config["cloudflare_account_id"] = (
+            config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+        )
+        baasha_pipeline_auth_config["pollinations_key"] = (
+            config["SECRETS"].get("POLLINATIONS_KEY", "").strip()
         )
         baasha_pipeline_auth_config["replicate_token"] = config["SECRETS"].get(
             "REPLICATE_TOKEN", ""
@@ -625,7 +642,9 @@ def start_draft_pipeline(
     primary_chatbot = baasha_pipeline_config.get().get("primary_chatbot", "")
     if stop_at_stage is None and primary_chatbot.startswith("ollama#"):
         stop_at_stage = 2  # Stop at PROMPTS stage (before image generation)
-        logger.info(f"Auto-set stop_at_stage=2 (PROMPTS) for Ollama model: {primary_chatbot}")
+        logger.info(
+            f"Auto-set stop_at_stage=2 (PROMPTS) for Ollama model: {primary_chatbot}"
+        )
     elif stop_at_stage is None:
         stop_at_stage = 0
     background_music_id = None

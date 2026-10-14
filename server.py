@@ -139,6 +139,8 @@ app.json_encoder = CustomJSONEncoder
 api = Api(app)
 config = configparser.ConfigParser()
 config.read("config.ini")
+if os.path.exists("config.secrets.ini"):
+    config.read("config.secrets.ini")
 logger = app.logger
 
 local_cache = os.path.join(os.path.dirname(__file__), "tmp")
@@ -155,6 +157,10 @@ def with_app_context(f):
             return f(*args, **kwargs)
 
     return decorated_function
+
+
+def get_model_default(key: str, fallback: str) -> str:
+    return baasha_pipeline_config.get().get(key) or fallback
 
 
 def load_prod_env(app):
@@ -222,8 +228,19 @@ def load_prod_env(app):
         config.get("LOGGING", "LOG_FILE", fallback="/tmp/baasha-service-api.log"),
     )
     baasha_pipeline_config.set("tts_toolkit", tts_service["TOOLKIT"])
+    baasha_pipeline_config.set("tts_lang", tts_service.get("LANG", "en"))
     baasha_pipeline_config.set("coqui_server", tts_service["COQUI"])
     baasha_pipeline_config.set("primary_chatbot", config["PREFS"]["PRIMARY_CHATBOT"])
+    baasha_pipeline_config.set(
+        "image_engine", config.get("MODELS", "IMAGE_ENGINE", fallback="cf_flux")
+    )
+    baasha_pipeline_config.set(
+        "avatar_engine",
+        config.get("MODELS", "AVATAR_ENGINE", fallback="replicate_video_retalking"),
+    )
+    baasha_pipeline_config.set(
+        "gen_video_conf", config.get("MODELS", "VIDEO_CONF", fallback="v4")
+    )
 
     # 2. setup local cache for audios/media download
     baasha_pipeline_config.set("tmp_path", local_cache)
@@ -265,6 +282,20 @@ def load_prod_env(app):
         "GOOGLE_IMAGE_GEN"
     ]
     baasha_pipeline_auth_config["groq_key"] = config["SECRETS"]["GROQ_KEY"].split(", ")
+    baasha_pipeline_auth_config["openrouter_key"] = [
+        k.strip()
+        for k in config["SECRETS"].get("OPENROUTER_KEY", "").split(",")
+        if k.strip()
+    ]
+    baasha_pipeline_auth_config["cloudflare_token"] = (
+        config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").strip()
+    )
+    baasha_pipeline_auth_config["cloudflare_account_id"] = (
+        config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    )
+    baasha_pipeline_auth_config["pollinations_key"] = (
+        config["SECRETS"].get("POLLINATIONS_KEY", "").strip()
+    )
     baasha_pipeline_auth_config["replicate_token"] = config["SECRETS"][
         "REPLICATE_TOKEN"
     ]
@@ -699,8 +730,10 @@ class DraftResource(Resource):
                 story_sentences = list(map(lambda x: x["text"], story_sentences))
                 story = "\n".join(story_sentences)
 
-            image_engine = args.image_engine or video_data.get(
-                "image_engine", "gemini_nano_banana"
+            image_engine = (
+                args.image_engine
+                or video_data.get("image_engine")
+                or get_model_default("image_engine", "cf_flux")
             )
             new_voice_id = args.voice_id or video_data.get("voice_id", draft.voice_id)
 
@@ -716,7 +749,9 @@ class DraftResource(Resource):
 
             img_width, img_height = None, None
             try:
-                dims = ui_configs.configs[args.gen_video_conf or "v4"].get_asset_sizes()
+                dims = ui_configs.configs[
+                    args.gen_video_conf or get_model_default("gen_video_conf", "v4")
+                ].get_asset_sizes()
                 (img_width, img_height) = dims.get("images")
             except Exception as e:
                 pass
@@ -1134,7 +1169,7 @@ class DraftResource(Resource):
 
                 try:
                     dims = ui_configs.configs[
-                        args.gen_video_conf or "v4"
+                        args.gen_video_conf or get_model_default("gen_video_conf", "v4")
                     ].get_asset_sizes()
                     (width, height) = dims.get("images")
                 except Exception as e:
@@ -2003,7 +2038,10 @@ class DraftResource(Resource):
                 else:
                     voice_details = db_session.query(Voice).get(new_voice_id)
                     (output, processed_output, has_audio) = narrator_avatar_gen(
-                        args.avatar_engine or "replicate_video_retalking",
+                        args.avatar_engine
+                        or get_model_default(
+                            "avatar_engine", "replicate_video_retalking"
+                        ),
                         " ".join(video_data["text"]),
                         video_data["audios"][0][0],
                         narrator_avatar_changed,
@@ -2361,7 +2399,7 @@ class DraftResource(Resource):
                 img_width, img_height = None, None
                 try:
                     dims = ui_configs.configs[
-                        data.gen_video_conf or "v4"
+                        data.gen_video_conf or get_model_default("gen_video_conf", "v4")
                     ].get_asset_sizes()
                     (img_width, img_height) = dims.get("images")
                 except Exception as e:
@@ -3034,7 +3072,8 @@ class DraftResource(Resource):
                     image_dims = (None, None)
                     try:
                         dims = ui_configs.configs[
-                            data.gen_video_conf or "v4"
+                            data.gen_video_conf
+                            or get_model_default("gen_video_conf", "v4")
                         ].get_asset_sizes()
                         image_dims = dims.get("images")
                     except Exception as e:
@@ -3083,7 +3122,9 @@ class DraftResource(Resource):
                     if search_images:
                         video_data["search_images_queries"] = search_images
 
-                    video_data["video_conf_version"] = data.gen_video_conf or "v4"
+                    video_data[
+                        "video_conf_version"
+                    ] = data.gen_video_conf or get_model_default("gen_video_conf", "v4")
                     target_draft.video_data = json.dumps(video_data)
                     db_session.commit()
 

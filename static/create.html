@@ -356,6 +356,7 @@
                 <label class="field-label" style="margin: 0; color: #38bdf8;">Workflow Mode</label>
                 <select class="field-select" id="workflow-mode" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem; background: rgba(15, 23, 42, 0.8); border-color: rgba(56, 189, 248, 0.3);">
                     <option value="auto" selected>Auto (One-Shot Cinematic Generation)</option>
+                    <option value="prompts">Prompts Only (Stop Before Image Gen)</option>
                     <option value="review">Review Driven (Multi-Stage Director Studio)</option>
                 </select>
             </div>
@@ -444,14 +445,18 @@
                 <div class="field-group">
                     <label class="field-label">Image Engine</label>
                     <select class="field-select" id="cfg-img-engine">
+                        <option value="">Config default (config.ini)</option>
                         <option value="fal/z-image" selected>fal/z-image</option>
                         <option value="fal/gpt">fal/gpt</option>
                         <option value="fal/sd">fal/sd</option>
+                        <option value="cf_flux">cf_flux (Free)</option>
+                        <option value="pollinations">pollinations (Free)</option>
                     </select>
                 </div>
                 <div class="field-group">
                     <label class="field-label">Voice ID</label>
                     <select class="field-select" id="cfg-voice-id">
+                        <option value="">Config default (config.ini)</option>
                         <option value="gtts" selected>GTTS (Standard Audio)</option>
                         <option value="Fenrir">Fenrir (Premium UGC)</option>
                     </select>
@@ -516,6 +521,19 @@
         }
 
         const DEFAULT_STYLE_REF = "https://tempp.us-east-1.linodeobjects.com/Screenshot%20from%202026-04-30%2004-59-08.png";
+
+        const STAGE_BY_MODE = { review: 0, prompts: 2, auto: 4 };
+
+        const IS_LOCAL_HOST = ['localhost', '127.0.0.1', '[::1]'].indexOf(
+            window.location.hostname
+        ) !== -1;
+
+        const CONFIG_DEFAULT = '';
+
+        if (IS_LOCAL_HOST) {
+            document.getElementById('cfg-img-engine').value = CONFIG_DEFAULT;
+            document.getElementById('cfg-voice-id').value = CONFIG_DEFAULT;
+        }
 
         function onPresetChange() {
             const preset = document.getElementById('cfg-preset').value;
@@ -764,7 +782,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             const voiceId = document.getElementById('cfg-voice-id').value;
 
             const mode = document.getElementById('workflow-mode').value;
-            const stopStage = (mode === 'review') ? 0 : 4;
+            const stopStage = STAGE_BY_MODE[mode] ?? 4;
 
             const useGrid = document.getElementById('cfg-use-grid').checked;
             const judgeGrids = document.getElementById('cfg-judge-grids').checked;
@@ -775,20 +793,24 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             // Compile payload
             const payload = {
                 idea_id: ideaId,
-                image_engine: imgEngine,
                 story: storyVal,
                 title: storyVal.substring(0, 30) + "...",
                 content_type: "viral short form social media content",
                 style_reference_urls: styleRefs,
-                gen_video_conf: "v4",
-                voice_id: voiceId,
-                avatar_engine: "lemon_slice",
                 use_character_refs: true,
                 use_image_grid: useGrid,
                 stop_at_stage: stopStage,
                 judge_grids: judgeGrids,
                 upscale_grid_crops: upscaleCrops
             };
+
+            if (imgEngine) payload.image_engine = imgEngine;
+            if (voiceId) payload.voice_id = voiceId;
+
+            if (!IS_LOCAL_HOST) {
+                payload.gen_video_conf = "v4";
+                payload.avatar_engine = "lemon_slice";
+            }
 
             // Custom dynamic prompt overrides if enabled
             if (document.getElementById('byop-enable').checked) {

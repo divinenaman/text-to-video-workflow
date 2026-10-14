@@ -12,6 +12,7 @@ from . import (
     gtts_local as gtts,
     object_storage,
     coqui_tts,
+    melotts,
     errors,
     unreal_speech,
     sarvam_ai,
@@ -178,7 +179,8 @@ def text_to_speech(
 ):
 
     toolkit = tts_toolkit or config.get("tts_toolkit")
-    logging.info(f"Selected audio toolkit : {toolkit}")
+    lang = config.get("tts_lang") or "en"
+    logging.info(f"Selected audio toolkit : {toolkit} (lang={lang})")
 
     if toolkit == "google":
         text = list(map(lambda x: replace_special_tokens(x), text))
@@ -235,12 +237,17 @@ def text_to_speech(
 
             if coqui_file == None:
                 logging.info(f"error while coqui-tts for `{t}`, falling back to gtts")
-                gtts.tts(t, output_file)
+                gtts.tts(t, output_file, lang)
             else:
                 output_file = coqui_file
 
+        elif toolkit == "melotts":
+            if melotts.tts(t, output_file, lang) is None:
+                logging.info(f"error while melotts for `{t}`, falling back to gtts")
+                gtts.tts(t, output_file, lang)
+
         elif toolkit == "gtts":
-            gtts.tts(t, output_file)
+            gtts.tts(t, output_file, lang)
 
         # upload to object storage
         public_url = object_storage.upload_file(

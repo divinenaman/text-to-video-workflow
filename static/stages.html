@@ -1363,6 +1363,23 @@
 
             let html = '';
 
+            if (prompts.length) {
+                html += `
+                    <div class="directive-card" style="border-color: rgba(34, 197, 94, 0.25); background: rgba(34, 197, 94, 0.04);">
+                        <div class="directive-header">
+                            <h3 style="color: #22c55e; display: flex; align-items: center; gap: 0.5rem;">
+                                <i data-lucide="clipboard-copy" style="width: 18px; height: 18px;"></i> Export All Image Prompts
+                            </h3>
+                            <span class="meta-badge" style="background: rgba(34,197,94,0.15); color: #22c55e;">${prompts.length} scene${prompts.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin-bottom: 0.75rem;">Copies one instruction block plus every scene prompt in order. Paste it into ChatGPT or any image agent and it will generate all ${prompts.length} image${prompts.length === 1 ? '' : 's'} in sequence.</p>
+                        <button id="copy-all-prompts-btn" onclick="copyCombinedImagePrompt()" style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+                            <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Copy All Image Prompts
+                        </button>
+                    </div>
+                `;
+            }
+
             // Master style reference description injection
             const styleDesc = videoData.style_description;
             if (styleDesc) {
@@ -1906,6 +1923,67 @@
                 })
                 .catch(err => {
                     console.error("Could not copy logs: ", err);
+                });
+        }
+
+        function buildCombinedImagePrompt() {
+            const prompts = (currentDraft.image_descriptions || [])
+                .map(p => Array.isArray(p) ? p[0] : p)
+                .map(p => (p || '').trim())
+                .filter(p => p.length > 0);
+
+            if (prompts.length === 0) return '';
+
+            const total = prompts.length;
+            const videoData = currentDraft._video_data || {};
+            const styleDesc = (videoData.style_description || '').trim();
+
+            const lines = [];
+            lines.push(`Generate exactly ${total} image${total === 1 ? '' : 's'} for the ${total} scene${total === 1 ? '' : 's'} below, in the exact order given.`);
+            lines.push(`Each numbered scene below is one image, so the result is ${total} separate images in sequence.`);
+            lines.push('Keep the same characters, locations, wardrobe and lighting style consistent across every scene so the whole set reads as one continuous sequence.');
+            lines.push('Do not skip, merge, reorder or invent scenes - generate one image per scene prompt, nothing more and nothing less.');
+
+            if (styleDesc) {
+                lines.push('');
+                lines.push(`STYLE - apply this to every image: ${styleDesc}`);
+            }
+
+            prompts.forEach((p, i) => {
+                lines.push('');
+                lines.push(`=== SCENE ${i + 1} of ${total} ===`);
+                lines.push(p);
+            });
+
+            return lines.join('\n');
+        }
+
+        function copyCombinedImagePrompt() {
+            const text = buildCombinedImagePrompt();
+            if (!text) {
+                console.warn("No image prompts available to copy.");
+                return;
+            }
+
+            const btn = document.getElementById('copy-all-prompts-btn');
+            const original = btn ? btn.innerHTML : '';
+
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    console.log("Combined image prompt copied to clipboard.");
+                    if (btn) {
+                        btn.innerHTML = '<i data-lucide="check" style="width: 14px; height: 14px;"></i> Copied!';
+                        lucide.createIcons();
+                        setTimeout(() => {
+                            if (btn) {
+                                btn.innerHTML = original;
+                                lucide.createIcons();
+                            }
+                        }, 2000);
+                    }
+                })
+                .catch(err => {
+                    console.error("Could not copy prompts: ", err);
                 });
         }
 

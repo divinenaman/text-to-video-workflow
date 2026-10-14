@@ -20,12 +20,22 @@ def object_storage_creds():
 
 @errors.raise_ctx_errors
 def get_assets_bucket_name():
-    return app_config.get().get("auth").get("object_storage").get("assets_bucket", "baasha-assets")
+    return (
+        app_config.get()
+        .get("auth")
+        .get("object_storage")
+        .get("assets_bucket", "baasha-assets")
+    )
 
 
 @errors.raise_ctx_errors
 def get_bgm_bucket_name():
-    return app_config.get().get("auth").get("object_storage").get("bgm_bucket", "baasha-bgm")
+    return (
+        app_config.get()
+        .get("auth")
+        .get("object_storage")
+        .get("bgm_bucket", "baasha-bgm")
+    )
 
 
 @errors.raise_ctx_errors
@@ -39,25 +49,37 @@ def get_cluster():
 
 
 @errors.raise_ctx_errors
+def get_path_style() -> bool:
+    auth_config = app_config.get().get("auth").get("object_storage")
+    if isinstance(auth_config, dict) and auth_config.get("path_style") is not None:
+        return bool(auth_config.get("path_style"))
+    cluster = str(auth_config.get("cluster") or "")
+    host = cluster.split(":")[0]
+    return host in ("localhost", "127.0.0.1", "::1")
+
+
+@errors.raise_ctx_errors
+def compose_url(cluster: str, bucket_name: str, key: str = "") -> str:
+    protocol = get_protocol()
+    key = key.lstrip("/")
+    if get_path_style():
+        base = f"{protocol}://{cluster}/{bucket_name}"
+        return f"{base}/{key}" if key else base
+    if key:
+        return f"{protocol}://{bucket_name}.{cluster}/{key}"
+    return f"{protocol}://{bucket_name}.{cluster}"
+
+
+@errors.raise_ctx_errors
 def build_asset_url(path: str = "") -> str:
     """Build a URL for an asset in the assets bucket."""
-    bucket = get_assets_bucket_name()
-    cluster = get_cluster()
-    protocol = get_protocol()
-    if path:
-        return f"{protocol}://{bucket}.{cluster}/{path}"
-    return f"{protocol}://{bucket}.{cluster}"
+    return compose_url(str(get_cluster()), get_assets_bucket_name(), path)
 
 
 @errors.raise_ctx_errors
 def build_bgm_url(path: str = "") -> str:
     """Build a URL for an asset in the BGM bucket."""
-    bucket = get_bgm_bucket_name()
-    cluster = get_cluster()
-    protocol = get_protocol()
-    if path:
-        return f"{protocol}://{bucket}.{cluster}/{path}"
-    return f"{protocol}://{bucket}.{cluster}"
+    return compose_url(str(get_cluster()), get_bgm_bucket_name(), path)
 
 
 # (bucket-name, folder-path)
@@ -95,6 +117,15 @@ ACL_PRIVATE = "private"
 
 
 @errors.raise_ctx_errors
+def resolve_bucket(bucket):
+    if callable(bucket):
+        bucket = bucket()
+    if not isinstance(bucket, (tuple, list)) or len(bucket) != 2:
+        raise errors.BaashaError(f"invalid object_storage bucket: {bucket!r}")
+    return bucket[0], bucket[1]
+
+
+@errors.raise_ctx_errors
 def create_connection(client):
     if client:
         return client
@@ -113,15 +144,12 @@ def create_connection(client):
 
 @errors.raise_ctx_errors
 def mk_url(cluster, bucket_name, key):
-    protocol = get_protocol()
-    return f"{protocol}://{bucket_name}.{cluster}/{key}"
+    return compose_url(cluster, bucket_name, key)
 
 
 @errors.raise_ctx_errors
 def mk_url_from_bucket(bucket_name, key):
-    cluster = get_cluster()
-    protocol = get_protocol()
-    return f"{protocol}://{bucket_name}.{cluster}/{key}"
+    return compose_url(str(get_cluster()), bucket_name, key)
 
 
 @errors.raise_ctx_errors
@@ -134,7 +162,7 @@ def list_bucket_names(client=None):
 
 @errors.raise_ctx_errors
 def upload_file(bucket, filepath, name, acl=ACL_PRIVATE, client=None):
-    bucket_name, folder_path = bucket
+    bucket_name, folder_path = resolve_bucket(bucket)
     conn, cluster = create_connection(client)
     key = f"{folder_path}{name}"
 
@@ -147,7 +175,7 @@ def upload_file(bucket, filepath, name, acl=ACL_PRIVATE, client=None):
 
 @errors.raise_ctx_errors
 def upload_data(bucket, data, name, acl=ACL_PRIVATE, client=None):
-    bucket_name, folder_path = bucket
+    bucket_name, folder_path = resolve_bucket(bucket)
     conn, cluster = create_connection(client)
     key = f"{folder_path}{name}"
 
@@ -158,7 +186,7 @@ def upload_data(bucket, data, name, acl=ACL_PRIVATE, client=None):
 
 @errors.log_ctx_errors
 def get_object_url_from_key(bucket, name, client=None):
-    bucket_name, folder_path = bucket
+    bucket_name, folder_path = resolve_bucket(bucket)
     conn, cluster = create_connection(client)
     skey = f"{folder_path}{name}"
     res = conn.list_objects(Bucket=bucket_name, Prefix=skey)
