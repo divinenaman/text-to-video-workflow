@@ -932,6 +932,16 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
         let userStopped = true;
         let onDeviceChecked = false;
         let statusIsError = false;
+        let networkRetries = 0;
+        let retryTimer = null;
+        const NETWORK_RETRY_DELAYS = [2000, 4000, 8000, 15000, 30000];
+
+        function clearRetryTimer() {
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+                retryTimer = null;
+            }
+        }
 
         function setDictationStatus(text, isError) {
             statusIsError = Boolean(isError);
@@ -1000,6 +1010,8 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
         function stopDictation() {
             userStopped = true;
             dictating = false;
+            networkRetries = 0;
+            clearRetryTimer();
             micBtn.classList.remove('recording');
             setMicIcon('mic');
             try { recognition.stop(); } catch (e) {}
@@ -1030,6 +1042,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             recognition.lang = navigator.language || 'en-US';
 
             recognition.onresult = function (event) {
+                networkRetries = 0;
                 let interim = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     const res = event.results[i];
@@ -1049,8 +1062,28 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
                     stopDictation();
                     setDictationStatus('Microphone permission denied.', true);
                 } else if (err === 'network') {
-                    stopDictation();
-                    setDictationStatus('Speech service unreachable - check your connection.', true);
+                    if (networkRetries < NETWORK_RETRY_DELAYS.length) {
+                        const delay = NETWORK_RETRY_DELAYS[networkRetries];
+                        networkRetries += 1;
+                        setDictationStatus(
+                            'Speech service dropped - reconnecting (' + networkRetries +
+                            '/' + NETWORK_RETRY_DELAYS.length + ')...'
+                        );
+                        clearRetryTimer();
+                        retryTimer = setTimeout(function () {
+                            retryTimer = null;
+                            if (!dictating || userStopped) return;
+                            setDictationStatus('Listening...');
+                            try { recognition.start(); } catch (e) {}
+                        }, delay);
+                    } else {
+                        stopDictation();
+                        setDictationStatus(
+                            'Speech service unreachable after ' + NETWORK_RETRY_DELAYS.length +
+                            ' retries - check your connection or network access to Google speech servers.',
+                            true
+                        );
+                    }
                 } else if (err === 'language-not-supported') {
                     stopDictation();
                     setDictationStatus('Language ' + recognition.lang + ' is not supported.', true);
@@ -1061,6 +1094,9 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             };
 
             recognition.onend = function () {
+                if (retryTimer) {
+                    return;
+                }
                 if (dictating && !userStopped) {
                     try { recognition.start(); } catch (e) {}
                     return;
