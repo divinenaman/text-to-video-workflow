@@ -110,7 +110,7 @@
             font-family: 'Inter', sans-serif;
             font-size: 1.05rem;
             line-height: 1.6;
-            padding-right: 3.5rem;
+            padding-right: 6.5rem;
         }
 
         .prompt-textarea::placeholder {
@@ -143,6 +143,65 @@
 
         .send-btn:active {
             transform: translateY(0);
+        }
+
+        .mic-btn {
+            position: absolute;
+            bottom: 4px;
+            right: 56px;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.6);
+            color: #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .mic-btn:hover {
+            color: #38bdf8;
+            border-color: rgba(56, 189, 248, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .mic-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .mic-btn.recording {
+            color: #ffffff;
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            border-color: rgba(239, 68, 68, 0.7);
+            animation: mic-pulse 1.4s ease-out infinite;
+        }
+
+        @keyframes mic-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+            70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .dictation-status {
+            display: none;
+            margin-top: 0.4rem;
+            font-size: 0.8rem;
+            line-height: 1.35;
+            color: #fbbf24;
+            min-height: 1rem;
+        }
+
+        .dictation-status.active {
+            display: block;
+        }
+
+        .dictation-status.error {
+            color: #f87171;
         }
 
         /* Config Accordion styling */
@@ -337,10 +396,14 @@
         <div class="prompt-card">
             <div class="textarea-wrapper">
                 <textarea class="prompt-textarea" id="story-input" placeholder="What story do you want to create? (e.g. re-create the slumdog millionaire scene with dialogues)..." autofocus></textarea>
+                <button class="mic-btn" id="mic-btn" type="button" title="Dictate your story">
+                    <i data-lucide="mic" style="width: 18px; height: 18px;"></i>
+                </button>
                 <button class="send-btn" id="send-btn" onclick="submitPrompt()">
                     <i data-lucide="sparkles" style="width: 20px; height: 20px;"></i>
                 </button>
             </div>
+            <div class="dictation-status" id="dictation-status"></div>
             <!-- Preset Selector Group -->
             <div class="preset-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04);">
                 <label class="field-label" style="margin: 0;">Generation Preset</label>
@@ -858,6 +921,164 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
                 alert(`Error: ${err.message}`);
             }
         }
+
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const micBtn = document.getElementById('mic-btn');
+        const dictationStatus = document.getElementById('dictation-status');
+        const storyInput = document.getElementById('story-input');
+
+        let recognition = null;
+        let dictating = false;
+        let userStopped = true;
+        let onDeviceChecked = false;
+        let statusIsError = false;
+
+        function setDictationStatus(text, isError) {
+            statusIsError = Boolean(isError);
+            dictationStatus.textContent = text || '';
+            dictationStatus.classList.toggle('active', Boolean(text));
+            dictationStatus.classList.toggle('error', Boolean(isError));
+        }
+
+        function setMicIcon(name) {
+            micBtn.innerHTML = '<i data-lucide="' + name + '" style="width: 18px; height: 18px;"></i>';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function appendTranscript(text) {
+            const t = String(text || '').replace(/\s+/g, ' ').trim();
+            if (!t) return;
+            const current = storyInput.value;
+            storyInput.value = current
+                ? current.replace(/\s+$/, '') + ' ' + t
+                : t;
+        }
+
+        function checkOnDevice() {
+            if (onDeviceChecked) return Promise.resolve();
+            onDeviceChecked = true;
+            if (!SpeechRec.available || !recognition || !recognition.lang) return Promise.resolve();
+
+            return SpeechRec.available({
+                langs: [recognition.lang],
+                processLocally: true,
+                quality: 'dictation'
+            }).then(function (state) {
+                if (state === 'available') {
+                    recognition.processLocally = true;
+                } else if (state === 'unavailable') {
+                    recognition.processLocally = false;
+                } else {
+                    return SpeechRec.install({
+                        langs: [recognition.lang],
+                        processLocally: true,
+                        quality: 'dictation'
+                    }).then(function (ok) {
+                        recognition.processLocally = Boolean(ok);
+                    });
+                }
+            }).catch(function () {
+                recognition.processLocally = false;
+            });
+        }
+
+        function startDictation() {
+            if (!recognition || dictating || !userStopped) return;
+            userStopped = false;
+            micBtn.classList.add('recording');
+            setMicIcon('mic-off');
+            setDictationStatus('Preparing speech model...');
+
+            checkOnDevice().catch(function () {}).finally(function () {
+                if (userStopped) return;
+                dictating = true;
+                setDictationStatus('Listening...');
+                try { recognition.start(); } catch (e) {}
+            });
+        }
+
+        function stopDictation() {
+            userStopped = true;
+            dictating = false;
+            micBtn.classList.remove('recording');
+            setMicIcon('mic');
+            try { recognition.stop(); } catch (e) {}
+            if (!statusIsError) setDictationStatus('');
+        }
+
+        function initDictation() {
+            if (!SpeechRec) {
+                micBtn.style.display = 'none';
+                return;
+            }
+
+            if (!window.isSecureContext) {
+                micBtn.disabled = true;
+                micBtn.title = 'Microphone needs a secure origin (localhost or HTTPS)';
+                setDictationStatus(
+                    'Mic blocked on this origin. Open the app on localhost, or set ' +
+                    'chrome://flags/#unsafely-treat-insecure-origin-as-secure to this URL and relaunch.',
+                    true
+                );
+                return;
+            }
+
+            recognition = new SpeechRec();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
+            recognition.lang = navigator.language || 'en-US';
+
+            recognition.onresult = function (event) {
+                let interim = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const res = event.results[i];
+                    if (res.isFinal) appendTranscript(res[0].transcript);
+                    else interim += res[0].transcript;
+                }
+                if (dictating) {
+                    const live = (interim || '').replace(/\s+/g, ' ').trim();
+                    setDictationStatus(live || 'Listening...');
+                }
+            };
+
+            recognition.onerror = function (event) {
+                const err = event.error;
+                if (err === 'no-speech' || err === 'aborted') return;
+                if (err === 'not-allowed' || err === 'service-not-allowed') {
+                    stopDictation();
+                    setDictationStatus('Microphone permission denied.', true);
+                } else if (err === 'network') {
+                    stopDictation();
+                    setDictationStatus('Speech service unreachable - check your connection.', true);
+                } else if (err === 'language-not-supported') {
+                    stopDictation();
+                    setDictationStatus('Language ' + recognition.lang + ' is not supported.', true);
+                } else {
+                    stopDictation();
+                    setDictationStatus('Dictation error: ' + err, true);
+                }
+            };
+
+            recognition.onend = function () {
+                if (dictating && !userStopped) {
+                    try { recognition.start(); } catch (e) {}
+                    return;
+                }
+                dictating = false;
+                micBtn.classList.remove('recording');
+                setMicIcon('mic');
+                if (!statusIsError) setDictationStatus('');
+            };
+
+            micBtn.addEventListener('click', function () {
+                if (micBtn.disabled) return;
+                if (!userStopped) stopDictation();
+                else startDictation();
+            });
+        }
+
+        initDictation();
 
         // Support triggering on 'Enter' key inside textarea (without shift)
         document.getElementById('story-input').addEventListener('keydown', function(e) {
