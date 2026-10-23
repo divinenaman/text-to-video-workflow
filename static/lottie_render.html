@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Baasha Lottie Frame Renderer</title>
+  <script src="lottie.min.js"></script>
+  <style>
+    html, body { margin: 0; background: #000; }
+    #player { overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <script>
+    window.__status = "idle";
+    window.__loadScene = function (data) {
+      return new Promise(function (resolve, reject) {
+        try {
+          if (window.__anim) { window.__anim.destroy(); window.__anim = null; }
+          var el = document.getElementById("player");
+          el.style.width = data.w + "px";
+          el.style.height = data.h + "px";
+          var anim = lottie.loadAnimation({
+            container: el,
+            renderer: "canvas",
+            loop: false,
+            autoplay: false,
+            rendererSettings: {
+              preserveAspectRatio: "xMidYMid meet",
+              clearCanvas: true
+            },
+            animationData: data
+          });
+          window.__anim = anim;
+          anim.addEventListener("DOMLoaded", function () {
+            window.__status = "loaded";
+            resolve({ total: anim.totalFrames, w: data.w, h: data.h });
+          });
+          anim.addEventListener("data_failed", function () {
+            reject(new Error("lottie data_failed"));
+          });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    };
+    window.__seek = function (frame) {
+      var anim = window.__anim;
+      if (!anim) return Promise.reject(new Error("no anim"));
+      anim.goToAndStop(frame, true);
+      return new Promise(function (resolve) {
+        requestAnimationFrame(function () {
+          var canvas = document.querySelector("#player canvas");
+          if (!canvas) return resolve(null);
+          resolve(canvas.toDataURL("image/png"));
+        });
+      });
+    };
+    window.__ready = true;
+  </script>
+</body>
+</html>

@@ -53,11 +53,15 @@ REQUEST_TIMEOUT = 180
 
 def get_account_id() -> Optional[str]:
     val = app_config.get().get("auth", {}).get("cloudflare_account_id")
+    if isinstance(val, list):
+        val = val[0] if val else ""
     return (val or "").strip() or None
 
 
 def get_token() -> Optional[str]:
     val = app_config.get().get("auth", {}).get("cloudflare_token")
+    if isinstance(val, list):
+        val = val[0] if val else ""
     return (val or "").strip() or None
 
 

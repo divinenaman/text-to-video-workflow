@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lottie Pipeline Walkthrough</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #1a1d27;
+    --panel2: #232734;
+    --accent: #6c8cff;
+    --accent2: #34d399;
+    --text: #e6e8ee;
+    --muted: #9aa0b0;
+    --border: #2c3140;
+    --code-bg: #12141c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 2rem 1rem 6rem;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 3rem; }
+  h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+  .subtitle { color: var(--muted); font-size: 1.1rem; }
+  .step {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 2.5rem;
+    overflow: hidden;
+  }
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.2rem 1.5rem;
+    background: var(--panel2);
+    border-bottom: 1px solid var(--border);
+  }
+  .step-num {
+    background: var(--accent);
+    color: #fff;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+  }
+  .step-title { font-size: 1.25rem; font-weight: 600; }
+  .step-body { padding: 1.5rem; }
+  .label { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: var(--panel2);
+    border-radius: 8px;
+  }
+  .flow-item {
+    background: var(--panel);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+  .flow-arrow { color: var(--accent); font-size: 1.2rem; }
+  .grid { display: grid; gap: 1rem; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 700px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  .card-title { font-weight: 600; margin-bottom: 0.75rem; color: var(--accent); }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: #c9d1e0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  img.preview {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: block;
+    margin: 0.5rem 0;
+  }
+  .frame-strip {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.5rem 0;
+  }
+  .frame-strip img {
+    height: 120px;
+    width: auto;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .badge-pass { background: rgba(52,211,153,0.15); color: var(--accent2); }
+  .badge-info { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .note {
+    background: rgba(108,140,255,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 1rem;
+    border-radius: 0 6px 6px 0;
+    margin-top: 1rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .player-box {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .player-box iframe {
+    width: 100%;
+    max-width: 400px;
+    height: 600px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .stat-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+  .stat {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    min-width: 100px;
+  }
+  .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Lottie Pipeline Walkthrough</h1>
+    <p class="subtitle">Text → Character Rig → Scene → Timeline → Player</p>
+    <div class="flow">
+      <div class="flow-item">1. LLM writes Python rig</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-item">2. Compiler → Lottie JSON</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-item">3. Gates validate + render</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-item">4. Scene places character</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-item">5. Timeline sequences scenes</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-item">6. Player HTML + JSON</div>
+    </div>
+  </header>
+
+  <!-- STEP 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">Character Rig Source (LLM-authored Python)</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        The LLM writes a <code>CharacterRig</code> using the typed SDK API: parts with shape/fill/parent hierarchy,
+        named poses, and named clips (keyframed pose sequences).
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">example.py — L1 paper-doll rig</div>
+          <pre>parts = [
+    Part(name="torso", shapes=[Shape(
+        kind=ShapeKind.RECT, size=(72, 120),
+        position=(0, 60), corner_radius=16)],
+        fill=(0.22, 0.42, 0.72, 1.0),
+        position=(256, 200)),
+    Part(name="head", shapes=[Shape(
+        kind=ShapeKind.ELLIPSE, size=(64, 70),
+        position=(0, -38))],
+        fill=(0.94, 0.76, 0.62, 1.0),
+        parent="torso"),
+    # ... arms, legs, hair
+]
+
+poses = [
+    Pose(name="neutral"),
+    Pose(name="wave_right", joints={
+        "right_arm": {"rotation": -135.0}}),
+    Pose(name="point_left", joints={
+        "left_arm": {"rotation": 90.0},
+        "head": {"rotation": -8.0}}),
+]
+
+clips = [
+    Clip(name="wave", keyframes=[
+        (0, "neutral"), (10, "wave_right"), (24, "neutral")]),
+    Clip(name="point", keyframes=[
+        (0, "neutral"), (8, "point_left"), (20, "point_left")]),
+]
+
+rig = CharacterRig(
+    name="example_hero", width=512, height=512,
+    fps=30, background=(0.86, 0.90, 0.94, 1.0),
+    parts=parts, poses=poses, clips=clips)</pre>
+        </div>
+        <div class="card">
+          <div class="card-title">Gate results</div>
+          <div class="stat-row">
+            <div class="stat">
+              <div class="stat-value" style="color:var(--accent2);">PASS</div>
+              <div class="stat-label">G0 Static</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value" style="color:var(--accent2);">PASS</div>
+              <div class="stat-label">G1 Render</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">7</div>
+              <div class="stat-label">Parts</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">3</div>
+              <div class="stat-label">Poses</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">2</div>
+              <div class="stat-label">Clips</div>
+            </div>
+          </div>
+          <div class="note">
+            <strong>G0:</strong> Validates model structure (unique names, parent refs, pose/clip refs).
+            <strong>G1:</strong> Renders via Playwright, checks frames are non-blank.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Compiled Lottie JSON</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        <code>compile_rig()</code> deterministically converts the Python model to Lottie JSON.
+        Parts become shape layers with parent transforms; clips become keyframed rotation properties.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">rig.json (excerpt)</div>
+          <pre>{
+  "v": "5.7.4",
+  "fr": 30,
+  "ip": 0,
+  "op": 24,
+  "w": 512,
+  "h": 512,
+  "nm": "example_hero",
+  "layers": [
+    {
+      "ty": 4, "nm": "right_arm",
+      "parent": 4,
+      "ks": {
+        "r": {
+          "a": 1,
+          "k": [
+            {"t": 0, "s": [0.0]},
+            {"t": 10, "s": [-135.0]},
+            {"t": 24, "s": [0.0]}
+          ]
+        },
+        "p": {"a": 0, "k": [46, 20, 0]},
+        ...
+      },
+      "shapes": [
+        {"ty": "gr", "nm": "right_arm",
+         "it": [
+           {"ty": "rc", "nm": "rect",
+            "p": {"a": 0, "k": [0, 48]},
+            "s": {"a": 0, "k": [22, 95]},
+            "r": {"a": 0, "k": 10}},
+           {"ty": "fl", "c": {"a": 0, "k": [0.22, 0.42, 0.72, 1]}},
+           {"ty": "tr", ...}
+         ]}
+      ]
+    }
+  ]
+}</pre>
+        </div>
+        <div class="card">
+          <div class="card-title">Rendered keyframes (pose snapshots)</div>
+          <div class="frame-strip">
+            <img src="rig_frames/f000.png" alt="frame 0">
+            <img src="rig_frames/f008.png" alt="frame 8">
+            <img src="rig_frames/f015.png" alt="frame 15">
+            <img src="rig_frames/f023.png" alt="frame 23">
+          </div>
+          <img class="preview" src="rig_sheet.png" alt="contact sheet">
+          <div class="note">
+            Frame 0 = neutral, frame 8 ≈ mid-wave (right arm raised), frame 15 ≈ mid-wave.
+            Deterministic rendering via <code>goToAndStop()</code> in headless Playwright.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">G2 Vision Judge (optional quality gate)</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        A contact sheet (multiple keyframes tiled) is sent to a vision model with a scoring rubric.
+        If score &lt; 85, a targeted fix prompt is fed back to the LLM. Max 3 iterations.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">Judge prompt (lottie-judge)</div>
+          <pre>Score this character rig contact sheet (0-100).
+
+Character: "Maya"
+Description: A 28-year-old mechanical engineer...
+
+Criteria:
+- Anatomical consistency across frames
+- Part hierarchy looks correct (limbs attach to torso)
+- Pose/clip animation is readable
+- No missing/overlapping parts
+- Color fills match description
+
+Return JSON:
+{
+  "consistency_score": &lt;int&gt;,
+  "issues": ["..."],
+  "suggestions": ["..."]
+}</pre>
+        </div>
+        <div class="card">
+          <div class="card-title">What happens next</div>
+          <div style="color:var(--muted);">
+            <p style="margin-bottom:0.75rem;"><span class="badge badge-pass">score ≥ 85</span> → Accepted, uploaded to S3</p>
+            <p style="margin-bottom:0.75rem;"><span class="badge badge-info">score &lt; 85</span> → Fix prompt sent back to LLM</p>
+            <p style="margin-bottom:0.75rem;">After 3 failed iterations → Fallback to example rig + error logged</p>
+            <p style="margin-top:1.5rem;font-size:0.9rem;">
+              The vision gate is optional (can be disabled). G0+G1 always run as minimum quality floor.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Scene — Place Characters</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        The LLM composes a scene by placing character instances at positions/scales and setting their clips.
+        <code>compile_scene()</code> flattens characters into shape layers (no nested precomps, which break lottie-web).
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">Scene source</div>
+          <pre>from baasha_pipeline.lottie_sdk import (
+    CharacterInstance, Scene, build_example_rig)
+
+rig = build_example_rig()
+hero = CharacterInstance(rig=rig).place(
+    540, 900, scale=160.0)
+hero.play("wave")
+
+scene = Scene(
+    width=1080, height=1920, fps=30,
+    duration=60,
+    background=(0.95, 0.93, 0.88, 1.0))
+scene.place_character(hero)</pre>
+          <div class="note">
+            Character is placed at (540, 900) in a 1080×1920 (9:16) canvas.
+            Clip <code>"wave"</code> runs for 60 frames (2 seconds @ 30fps).
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Scene render</div>
+          <div class="frame-strip">
+            <img src="scene_frames/f000.png" alt="scene frame 0">
+            <img src="scene_frames/f016.png" alt="scene frame 16">
+            <img src="scene_frames/f032.png" alt="scene frame 32">
+          </div>
+          <img class="preview" src="scene_sheet.png" alt="scene contact sheet" style="max-height:300px;">
+          <div class="stat-row">
+            <div class="stat">
+              <div class="stat-value">9</div>
+              <div class="stat-label">Layers</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">0</div>
+              <div class="stat-label">Nested assets</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">1080×1920</div>
+              <div class="stat-label">Canvas</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Timeline — Sequence Scenes</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        Multiple scenes are sequenced into a single Lottie document. Each scene becomes a precomp asset
+        with ip/op (in-point/out-point) windows controlling when it appears.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">Timeline construction</div>
+          <pre>from baasha_pipeline.lottie_sdk import Timeline
+
+tl = Timeline(width=1080, height=1920, fps=30)
+tl.add(scene, at=0)   # Scene 0: frames 0-59
+tl.add(scene2, at=60) # Scene 1: frames 60-104
+
+tl_doc = compile_timeline(tl)</pre>
+          <div class="note">
+            <strong>Scene 0</strong> (frames 0–59): Wave clip, warm background<br>
+            <strong>Scene 1</strong> (frames 60–104): Point clip, cool background
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Timeline render</div>
+          <div class="frame-strip">
+            <img src="timeline_frames/f000.png" alt="tl 0">
+            <img src="timeline_frames/f040.png" alt="tl 40">
+            <img src="timeline_frames/f060.png" alt="tl 60">
+            <img src="timeline_frames/f100.png" alt="tl 100">
+          </div>
+          <img class="preview" src="timeline_sheet.png" alt="timeline contact sheet" style="max-height:280px;">
+          <div class="stat-row">
+            <div class="stat">
+              <div class="stat-value">105</div>
+              <div class="stat-label">Total frames</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">2</div>
+              <div class="stat-label">Scene assets</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">3.5s</div>
+              <div class="stat-label">Duration</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">Player — Interactive Review</div>
+    </div>
+    <div class="step-body">
+      <p style="color:var(--muted);margin-bottom:1rem;">
+        A static HTML player embeds lottie-web and loads the timeline JSON. Supports play/pause/restart/scrub.
+        Served at <code>/lottie/player?url=...</code>.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">Player HTML</div>
+          <pre>&lt;script src="lottie.min.js"&gt;&lt;/script&gt;
+&lt;div id="c"&gt;&lt;/div&gt;
+&lt;script&gt;
+  var anim = lottie.loadAnimation({
+    container: document.getElementById('c'),
+    renderer: 'svg',
+    loop: true,
+    autoplay: true,
+    path: 'timeline.json'  // or animationData
+  });
+&lt;/script&gt;
+
+&lt;!-- Controls --&gt;
+&lt;button onclick="anim.play()"&gt;Play&lt;/button&gt;
+&lt;button onclick="anim.pause()"&gt;Pause&lt;/button&gt;
+&lt;input type="range" min="0" max="105"
+  oninput="anim.goToAndStop(this.value)" /&gt;</pre>
+        </div>
+        <div class="player-box">
+          <div class="card-title">Live player (local JSON)</div>
+          <iframe src="/static/lottie_player.html?url=/static/lottie_demo/timeline.json" title="Lottie player"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">✓</div>
+      <div class="step-title">Pipeline Summary</div>
+    </div>
+    <div class="step-body">
+      <div class="stat-row" style="justify-content:center;">
+        <div class="stat">
+          <div class="stat-value">40</div>
+          <div class="stat-label">Tests passing</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">5</div>
+          <div class="stat-label">Prompts added</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">4</div>
+          <div class="stat-label">Quality gates</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">L0/L1/L2</div>
+          <div class="stat-label">Complexity levels</div>
+        </div>
+      </div>
+      <div class="note" style="margin-top:1.5rem;">
+        <strong>Key insight:</strong> Characters are flattened into shape layers during scene compilation
+        (not nested precomps), which avoids lottie-web rendering issues with nested assets.
+        Timeline uses one level of precomp (scenes), which works reliably.
+      </div>
+      <div class="note" style="margin-top:1rem;">
+        <strong>Files generated:</strong>
+        <code>static/lottie_demo/</code> contains <code>rig.json</code>, <code>scene.json</code>,
+        <code>timeline.json</code>, plus rendered frames for each step.
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

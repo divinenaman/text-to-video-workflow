@@ -14,6 +14,8 @@ app_config = {
     "coqui_server": "http://localhost:8000",
     "log_path": "/tmp/baasha_pipeline.log",
     "primary_chatbot": "ollama#deepseek-r1:1.5b",
+    "chatbot_codegen": "",
+    "chatbot_judge": "",
     "auth": {
         "playgroundAI_cookie": None,
         "eleven_labs_key": None,

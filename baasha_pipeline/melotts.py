@@ -18,6 +18,10 @@ def _endpoint():
     auth_config = app_config.get().get("auth")
     token = auth_config.get("cloudflare_token")
     account_id = auth_config.get("cloudflare_account_id")
+    if isinstance(token, list):
+        token = token[0] if token else None
+    if isinstance(account_id, list):
+        account_id = account_id[0] if account_id else None
     if not token or not account_id:
         raise errors.BaashaError(
             "melotts: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not configured"

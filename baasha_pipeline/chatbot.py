@@ -19,7 +19,9 @@ LLM_GROQ = "groq"
 LLM_OLLAMA = "ollama"
 LLM_OPENROUTER = "openrouter"
 LLM_CLOUDFLARE = "cloudflare"
-LLM_STATELESS = (LLM_GROQ, LLM_OPENROUTER, LLM_CLOUDFLARE)
+LLM_POLLINATIONS = "pollinations"
+LLM_GEMINI_REST = "gemini_rest"
+LLM_STATELESS = (LLM_GROQ, LLM_OPENROUTER, LLM_CLOUDFLARE, LLM_POLLINATIONS, LLM_GEMINI_REST)
 LLM_PROVIDERS = (
     LLM_GEMINI,
     LLM_GEMMA,
@@ -28,6 +30,8 @@ LLM_PROVIDERS = (
     LLM_OLLAMA,
     LLM_OPENROUTER,
     LLM_CLOUDFLARE,
+    LLM_POLLINATIONS,
+    LLM_GEMINI_REST,
 )
 
 
@@ -82,7 +86,10 @@ def get_global_ctx(req_global_ctx):
 
 
 def get_gemini_settings():
-    gen_config = {"temperature": 1.0}
+    gen_config = {
+        "temperature": 1.0,
+        "max_output_tokens": 65536,
+    }
 
     return {
         "safety_settings": [
@@ -126,13 +133,42 @@ class ChatInterface:
         chain = _chain
         if chain is None and "," in str(llm_name):
             names = [n.strip() for n in str(llm_name).split(",") if n.strip()]
-            if len(names) > 1 and all(n.split("#")[0] in LLM_PROVIDERS for n in names):
+            if len(names) > 1 and all(
+                any(n.split("#")[0] == p or n.split("#")[0].startswith(p + "-")
+                    for p in LLM_PROVIDERS)
+                for n in names
+            ):
                 llm_name = names[0]
                 chain = names[1:]
 
         llm_name_split = llm_name.split("#")
 
-        if llm_name.startswith(LLM_GEMINI) or llm_name.startswith(LLM_GEMMA):
+        if llm_name_split[0] == LLM_GEMINI_REST:
+            if not keys:
+                keys = get_keys("google_genai_key")
+            keys = [k for k in (keys or []) if k]
+
+            if not keys:
+                raise Exception(
+                    "BaashaChatInterface: Google genai key not found! "
+                    "Set GOOGLE_GENAI_KEY in config.secrets.ini."
+                )
+
+            self.llm_service = LLM_GEMINI_REST
+            self.llm = keys[0]
+            self.llm_name = (
+                llm_name_split[1]
+                if len(llm_name_split) > 1
+                else "gemini-3.8-flash"
+            )
+            self.ctx = []
+            self.llm_name_vision = self.llm_name
+            self.rate_limiter = {"timeout": 5, "last_req": None}
+
+            if len(keys) > 1:
+                self.llm_fallback = ChatInterface(llm_name, keys[1:])
+
+        elif llm_name.startswith(LLM_GEMINI) or llm_name.startswith(LLM_GEMMA):
 
             if not keys:
                 keys = get_keys("google_genai_key")
@@ -193,6 +229,23 @@ class ChatInterface:
             # 20 seconds b/w each request
             self.rate_limiter = {"timeout": 30, "last_req": None}
 
+        elif llm_name_split[0] == LLM_GROQ and len(llm_name_split) > 1:
+            if not keys:
+                keys = get_keys("groq_key")
+            key = keys[0]
+
+            self.llm = groq.get_client(key)
+            self.llm_service = LLM_GROQ
+            # qwen3 hybrid thinking: "medium" leaves answer tokens within the
+            # 16384 cap ("high" eats the whole budget with reasoning only).
+            # qwen3.8-27b free tier is closeness to a 1000 OTPM cap, so space
+            # the calls generously.
+            self.groq_reasoning_effort = "medium" if "qwen" in llm_name_split[1] else None
+            self.rate_limiter = {"timeout": 50 if "qwen" in llm_name_split[1] else 8, "last_req": None}
+            self.llm_name = llm_name_split[1]
+            self.llm_name_vision = ""
+            self.ctx = []
+
         elif llm_name == LLM_GROQ:
             if not keys:
                 keys = get_keys("groq_key")
@@ -201,7 +254,12 @@ class ChatInterface:
             self.llm = groq.get_client(key)
             self.llm_service = LLM_GROQ
             self.rate_limiter = {"timeout": 8, "last_req": None}
-            self.llm_name = "qwen/qwen3.8-27b"
+            # qwen3.8-27b free tier429s ("Request too large ... output tokens")
+            # on any long-form generation (rig/compose sources), which collapsed
+            # every lottie call to the dead fallback chain. gpt-oss-120b serves
+            # 5k+ char code outputs in ~7s on the free tier.
+            self.llm_name = "openai/gpt-oss-120b"
+            self.groq_reasoning_effort = None
             self.llm_name_vision = ""
             self.ctx = []
 
@@ -258,6 +316,17 @@ class ChatInterface:
             if len(keys) > 1:
                 self.llm_fallback = ChatInterface(llm_name, keys[1:])
 
+        elif llm_name_split[0] == LLM_POLLINATIONS:
+            # keyless OpenAI-compatible endpoint; model defaults to "openai"
+            self.llm_service = LLM_POLLINATIONS
+            self.llm = "anonymous"
+            self.llm_name = (
+                llm_name_split[1] if len(llm_name_split) > 1 else free_llms.POLLINATIONS_DEFAULT_MODEL
+            )
+            self.ctx = []
+            # free tier: shared anonymous budget, keep modest concurrency
+            self.rate_limiter = {"timeout": 2, "last_req": None}
+
         elif llm_name_split[0] == LLM_CLOUDFLARE:
             # cloudflare#@cf/<model> format
             if not keys:
@@ -293,7 +362,15 @@ class ChatInterface:
             tail = self
             while tail.llm_fallback:
                 tail = tail.llm_fallback
-            tail.llm_fallback = ChatInterface(chain[0], _chain=chain[1:])
+            for node in chain:
+                try:
+                    tail.llm_fallback = ChatInterface(node, _chain=None)
+                    tail = tail.llm_fallback
+                except Exception as e:
+                    logging.warning(
+                        f"BaashaChatInterface: chain node {node} unavailable "
+                        f"({e}) - skipped"
+                    )
 
     def _ollama_check_model(self, model_name):
         """Check if model exists in Ollama, pull if not."""
@@ -320,6 +397,34 @@ class ChatInterface:
                     except Exception:
                         pass
             logging.info(f"BaashaChatInterface: Model {model_name} ready")
+
+    _COOLDOWN_HINTS = (
+        ("output tokens per minute", 60),
+        ("tokens per minute", 60),
+        ("tokens per day", 1800),
+        ("free-models-per-day", 3600),
+        ("neurons", 3600),
+        ("daily free", 3600),
+        ("resource has been exhausted", 60),
+    )
+
+    def cooldown_on_error(self, e):
+        """Bump this interface's cooldown when its provider is rate-limited."""
+        if not self.rate_limiter:
+            return
+        hint = str(e).lower()
+        for needle, secs in self._COOLDOWN_HINTS:
+            if needle in hint:
+                now = time.time()
+                self.rate_limiter["last_req"] = now
+                self.rate_limiter["timeout"] = max(
+                    int(self.rate_limiter.get("timeout", 0)), secs
+                )
+                logging.info(
+                    f"BaashaChatInterface {self.llm_name}: rate-limited "
+                    f"(cooldown {secs}s)"
+                )
+                return
 
     @errors.log_ctx_errors
     def is_ideal(self):
@@ -420,17 +525,34 @@ class ChatInterface:
             if time_diff > 0:
                 if self.llm_fallback and not is_context:
                     fallback_time_diff = self.llm_fallback.is_ideal()
-
                     if fallback_time_diff < time_diff:
-                        # optimization
+                        # rate-limited; prefer the fresher fallback node
+                        return self.llm_fallback.fetch_text(
+                            p, system_prompt=system_prompt, custom_model=custom_model
+                        )
+                    if fallback_time_diff > 0:
+                        logging.info(
+                            f"BaashaChatInterface {self.llm_name}: whole chain "
+                            f"cooling down ({time_diff:.0f}s) - skipping to "
+                            f"fallback"
+                        )
                         return self.llm_fallback.fetch_text(
                             p, system_prompt=system_prompt, custom_model=custom_model
                         )
 
+                if time_diff > 120 and not (self.llm_fallback and self.llm_fallback.is_ideal() <= 0):
+                    logging.info(
+                        f"BaashaChatInterface {self.llm_name}: long cooldown "
+                        f"({time_diff:.0f}s) - not waiting"
+                    )
+                    raise Exception(
+                        f"provider rate-limited for another {time_diff:.0f}s"
+                    )
+
                 logging.info(
                     f"BaashaChatInterface {self.llm_name}: query timeout for {time_diff} seconds"
                 )
-                time.sleep(time_diff)
+                time.sleep(min(time_diff, 90.0))
 
             t = time.time()
             logging.info(
@@ -454,14 +576,22 @@ class ChatInterface:
                 img = f"data:image/png;base64," + encode_image(text._bytes)
                 text = text.text
 
-            t = groq.fetch_text(
-                self.llm,
-                self.ctx,
-                text,
-                img,
-                system=system_prompt or get_global_ctx(self.global_ctx),
-                model=custom_model,
-            )
+            # Groq free tier has no vision models - hand image prompts straight
+            # to the fallback chain instead of burning a doomed request.
+            t = None
+            if not img:
+                try:
+                    t = groq.fetch_text(
+                        self.llm,
+                        self.ctx,
+                        text,
+                        img,
+                        system=system_prompt or get_global_ctx(self.global_ctx),
+                        model=custom_model or self.llm_name,
+                        reasoning_effort=getattr(self, "groq_reasoning_effort", None),
+                    )
+                except Exception as e:
+                    self.cooldown_on_error(e)
 
             # TODO: add img to ctx
             if is_context and append_context and self.ctx:
@@ -484,7 +614,9 @@ class ChatInterface:
 
             return t
 
-        elif self.llm_service in (LLM_OPENROUTER, LLM_CLOUDFLARE):
+        elif self.llm_service in (
+            LLM_OPENROUTER, LLM_CLOUDFLARE, LLM_POLLINATIONS, LLM_GEMINI_REST
+        ):
             return self._free_fetch_text(
                 p,
                 is_context=is_context,
@@ -529,6 +661,7 @@ class ChatInterface:
                     res = self.llm.send_message(p)
             except Exception as e:
                 err = e
+                self.cooldown_on_error(e)
 
             text = None
             if not err:
@@ -594,7 +727,11 @@ class ChatInterface:
         model = custom_model or self.llm_name
 
         try:
-            if self.llm_service == LLM_OPENROUTER:
+            if self.llm_service == LLM_POLLINATIONS:
+                t = free_llms.pollinations_fetch_text(
+                    self.ctx, text, imgs, system, model
+                )
+            elif self.llm_service == LLM_OPENROUTER:
                 fallbacks = None
                 if (
                     custom_model is None
@@ -603,6 +740,10 @@ class ChatInterface:
                     fallbacks = free_llms.OPENROUTER_MODEL_FALLBACKS
                 t = free_llms.openrouter_fetch_text(
                     self.llm, self.ctx, text, imgs, system, model, fallbacks
+                )
+            elif self.llm_service == LLM_GEMINI_REST:
+                t = free_llms.gemini_rest_fetch_text(
+                    self.llm, self.ctx, text, imgs, system, model
                 )
             else:
                 t = free_llms.cloudflare_fetch_text(
@@ -615,6 +756,7 @@ class ChatInterface:
                     model,
                 )
         except Exception as e:
+            self.cooldown_on_error(e)
             logging.error(f"BaashaChatInterface {self.llm_name}: {e}")
             if self.llm_fallback:
                 return self.llm_fallback.fetch_text(

@@ -517,6 +517,14 @@
                     </select>
                 </div>
                 <div class="field-group">
+                    <label class="field-label">Visual Engine</label>
+                    <select class="field-select" id="cfg-visual-engine">
+                        <option value="" selected>Config default (config.ini)</option>
+                        <option value="remotion">Remotion (default)</option>
+                        <option value="lottie">Lottie 2D Rig (Beta)</option>
+                    </select>
+                </div>
+                <div class="field-group">
                     <label class="field-label">Voice ID</label>
                     <select class="field-select" id="cfg-voice-id">
                         <option value="">Config default (config.ini)</option>
@@ -845,7 +853,12 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             const voiceId = document.getElementById('cfg-voice-id').value;
 
             const mode = document.getElementById('workflow-mode').value;
-            const stopStage = STAGE_BY_MODE[mode] ?? 4;
+            const visualEngine = document.getElementById('cfg-visual-engine').value;
+            let stopStage = STAGE_BY_MODE[mode] ?? 4;
+
+            // The Lottie engine authorizes rigs, renders timelines, and builds the
+            // 2D scene assets through stage 5; stopping at 4 leaves it half-built.
+            if (visualEngine === "lottie" && stopStage < 5) stopStage = 5;
 
             const useGrid = document.getElementById('cfg-use-grid').checked;
             const judgeGrids = document.getElementById('cfg-judge-grids').checked;
@@ -869,6 +882,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
 
             if (imgEngine) payload.image_engine = imgEngine;
             if (voiceId) payload.voice_id = voiceId;
+            if (visualEngine) payload.visual_engine = visualEngine;
 
             if (!IS_LOCAL_HOST) {
                 payload.gen_video_conf = "v4";

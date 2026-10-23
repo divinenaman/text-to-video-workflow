@@ -10,7 +10,7 @@ def get_client(key):
 
 
 @errors.log_ctx_errors
-def fetch_text(client, ctx, text, img=None, system=None, model=None):
+def fetch_text(client, ctx, text, img=None, system=None, model=None, reasoning_effort=None):
 
     def mk_text(role, text):
         return {"role": role, "content": text}
@@ -24,7 +24,7 @@ def fetch_text(client, ctx, text, img=None, system=None, model=None):
 
     for c in ctx:
         msg.append(mk_text(c[0], c[1]))
-    
+
     if text:
         if img:
             text = [
@@ -33,10 +33,24 @@ def fetch_text(client, ctx, text, img=None, system=None, model=None):
             ]
         msg.append(mk_text("user", text))
 
-    chat_completion = client.chat.completions.create(
-        messages=msg,
-        model=model or "qwen/qwen3.8-27b"
-    )
+    model = model or "openai/gpt-oss-120b"
+
+    def _call(**kwargs):
+        return client.chat.completions.create(
+            messages=msg,
+            model=model,
+            **kwargs,
+        )
+
+    try:
+        chat_completion = _call(
+            max_completion_tokens=16384,
+            **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+        )
+    except Exception:
+        chat_completion = _call(
+            max_completion_tokens=16384,
+        )
 
     return chat_completion.choices[0].message.content
 
