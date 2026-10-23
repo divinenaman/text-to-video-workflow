@@ -53,6 +53,7 @@ from baasha_pipeline.image_search_agent import (
     summarize_page,
 )
 from baasha_pipeline import motion_graphics_agent
+from baasha_pipeline import lottie_assets
 from models import AssetGenStages
 import cv2
 import numpy as np
@@ -818,22 +819,95 @@ def find_story_characters(
     image_prompt_spec = get_image_prompt_spec(is_styled=bool(style_refs)) or ""
     prompt = image_prompt_spec + "\n\n" + prompt if image_prompt_spec else prompt
 
+    def _parse_chars(raw_text):
+        return PromptSplitters.json_splitter(
+            {
+                "json_keys": [
+                    "name",
+                    "description",
+                    "fictional",
+                    "search",
+                    "voice_description",
+                ],
+                "join": False,
+            }
+        )(raw_text)
+
+    def _name_filter(items):
+        out = []
+        for x in items:
+            if isinstance(x, dict) and str(x.get("name") or "").strip():
+                out.append(x)
+        return out
+
     raw_text = generate_data(chatbot, "find_characters", prompt)
-    parsed_text = PromptSplitters.json_splitter(
-        {
-            "json_keys": [
-                "name",
-                "description",
-                "fictional",
-                "search",
-                "voice_description",
-            ],
-            "join": False,
+    filtered = _name_filter(_parse_chars(raw_text))
+    # Transient LLM failures must not silently zero out the character bible.
+    for _attempt in range(2):
+        if filtered:
+            break
+        logging.warning(
+            "find-characters parse empty (raw head=%r); retrying",
+            (raw_text or "")[:400],
+        )
+        time.sleep(8)
+        raw_text = generate_data(chatbot, "find_characters", prompt)
+        filtered = _name_filter(_parse_chars(raw_text))
+        if not filtered and raw_text:
+            try:
+                jj = json.loads(markdown_parse(raw_text, lang="json"))
+            except Exception:
+                jj = None
+            if jj is None:
+                # reasoning models slip on separators - repair before giving up
+                try:
+                    from json_repair import repair_json
+
+                    jj = json.loads(
+                        repair_json(markdown_parse(raw_text, lang="json") or raw_text)
+                    )
+                except Exception:
+                    jj = None
+            if jj is not None:
+                if isinstance(jj, list):
+                    items = jj
+                elif isinstance(jj, dict):
+                    items = jj.get("characters") or jj.get("cast") or []
+                else:
+                    items = []
+                filtered = _name_filter(items)
+
+    if not filtered:
+        # LLM outage safety net: downstream scene composition needs # CHARACTERS[...]
+        # entries, so derive a minimal cast from proper nouns in the story.
+        stopwords = {
+            "the", "a", "an", "her", "his", "she", "he", "they", "them",
+            "their", "we", "you", "it", "its", "and", "but", "or", "so",
+            "then", "together", "meanwhile", "suddenly", "after", "before",
+            "when", "while", "one", "two", "first", "next", "later",
+            "finally", "that", "this", "there", "here", "now", "soon",
+            "once", "again", "still", "just", "very",
         }
-    )(raw_text)
-    filtered = list(
-        filter(lambda x: x.get("name") != None and x.get("name") != "", parsed_text)
-    )
+        names = []
+        for tok in re.findall(r"\b[A-Z][A-Za-z0-9_-]{1,}\b", story_text):
+            if tok.lower() in stopwords or tok in names:
+                continue
+            names.append(tok)
+        filtered = [
+            {
+                "name": n,
+                "description": f"character in the story: {n}",
+                "fictional": True,
+                "search": n,
+                "voice_description": "",
+            }
+            for n in names[:4]
+        ]
+        if filtered:
+            logging.warning(
+                "find-characters heuristic fallback cast: %s",
+                [x["name"] for x in filtered],
+            )
 
     process_prompts = []
     for r in filtered:
@@ -864,6 +938,7 @@ def generate_character_bible(
     user_characters=None,
     cinematic_data=None,
     prompt_overrides=None,
+    visual_engine="image",
 ):
     """
     Identifies characters and generates their visual references eagerly and in batch.
@@ -897,6 +972,76 @@ def generate_character_bible(
             }
             for s in style_reference_urls
         ]
+
+    if str(visual_engine).startswith("lottie"):
+        complexity = "L1"
+        if "#" in str(visual_engine):
+            complexity = str(visual_engine).split("#", 1)[1] or "L1"
+        style_context = (
+            image_styles.to_text()
+            if image_styles and hasattr(image_styles, "to_text")
+            else (", ".join(image_styles) if isinstance(image_styles, list) else "")
+        )
+        lottie_outdir = f"lottie/{outdir}"
+
+        def _lottie_is_being(c):
+            """Lottie rigs are for sentient cast members only. Story objects
+            (seed packets, plants, tools) cost an authoring loop each and render
+            as humanoid fallback templates - scenes should carry them as props."""
+            text = f"{c.get('name', '')} {c.get('description', '')}".lower()
+            being = re.search(
+                r"\b(boy|girl|man|woman|men|women|child|kid|person|people|human|"
+                r"robot|android|bot|creature|animal|monster|beast|hero|heroine|"
+                r"princess|prince|king|queen|wizard|witch|fairy|spirit|dragon|"
+                r"alien|talking|protagonist|character|dog|cat|puppy|kitten)\b",
+                text,
+            )
+            nonbeing = re.search(
+                r"\b(packet|seed|flower|sunflower|plant|tree|rock|stone|ball|toy|"
+                r"object|item|tool|shovel|spade|house|shed|door|car|box|book|"
+                r"sword|crown|cup|phone|pot|can|egg|bread|cake)\b",
+                text,
+            )
+            if being:
+                return True
+            if nonbeing:
+                return False
+            return True
+
+        for i, char in enumerate(characters):
+            if char.get("lottie_url") or char.get("url"):
+                continue
+            if not _lottie_is_being(char):
+                logging.info(
+                    "lottie: skipping rig for non-character story element %r "
+                    "(scenes will carry it as a prop)",
+                    char.get("name"),
+                )
+                continue
+            desc = char.get("description") or "A clear, distinctive character."
+            routing_cfg = app_config.get().get("chatbot_codegen")
+            gen_chatbot = chatbot
+            if routing_cfg and str(routing_cfg).strip():
+                try:
+                    gen_chatbot = BaashaChat.ChatInterface(str(routing_cfg).strip())
+                except Exception as e:
+                    logging.warning(
+                        "lottie: codegen chatbot chain failed to load (%s); "
+                        "falling back to primary chain",
+                        e,
+                    )
+                    gen_chatbot = chatbot
+            entry = lottie_assets.author_character_rig(
+                gen_chatbot,
+                char.get("name") or f"character_{i}",
+                desc,
+                style_context=style_context,
+                complexity=complexity,
+                outdir=lottie_outdir,
+            )
+            if entry:
+                char.update(entry)
+        return characters
 
     search_tasks = {}
     for i, char in enumerate(characters):
@@ -1804,28 +1949,47 @@ def generate_video_data(
             elif data.get("cinematic"):
                 audio_timepoints = {}
 
-                for idx, c in enumerate(data["cinematic"]):
-                    if c["audio_type"] == "dialogue":
-                        speaker = c.get("speaker")
-                        text_line = story_lines[idx]
+                cinematic_entries = data["cinematic"]
+                has_dialogue = any(
+                    c.get("audio_type") == "dialogue" for c in cinematic_entries
+                )
+                if not has_dialogue:
+                    # Narration-only story: TTS the whole story as ONE audio file
+                    # split per sentence. The video renderer slices the full file
+                    # by these durations (matches text_to_speech_as_single_audio
+                    # format: [(full_url, dur0), ("1", dur1), ...]).
+                    (
+                        audios,
+                        audio_timepoints,
+                        _,
+                    ) = other_utils.text_to_speech_as_single_audio(
+                        story_lines,
+                        primary_voice_detail.id,
+                        primary_voice_detail.tts_toolkit,
+                    )
+                else:
+                    for idx, c in enumerate(cinematic_entries):
+                        if c["audio_type"] == "dialogue":
+                            speaker = c.get("speaker")
+                            text_line = story_lines[idx]
 
-                        v = (
-                            character_voice_detail_map.get(speaker)
-                            if character_voice_detail_map and speaker
-                            else None
-                        ) or primary_voice_detail
+                            v = (
+                                character_voice_detail_map.get(speaker)
+                                if character_voice_detail_map and speaker
+                                else None
+                            ) or primary_voice_detail
 
-                        (auds, tpoints, _) = other_utils.text_to_speech(
-                            [text_line],
-                            v.id,
-                            v.tts_toolkit,
-                            voice_description=getattr(v, "description", None),
-                        )
-                        audios = audios + auds
-                        audio_timepoints.update(tpoints)
-                    else:
-                        silence_dur: float = c["duration"]
-                        audios.append(("-1", silence_dur))
+                            (auds, tpoints, _) = other_utils.text_to_speech(
+                                [text_line],
+                                v.id,
+                                v.tts_toolkit,
+                                voice_description=getattr(v, "description", None),
+                            )
+                            audios = audios + auds
+                            audio_timepoints.update(tpoints)
+                        else:
+                            silence_dur: float = c["duration"]
+                            audios.append(("-1", silence_dur))
             else:
                 (
                     audios,
@@ -2160,9 +2324,65 @@ def split_text_into_sentences_with_styling(
         logging.info(f"image styles: {style_text}")
         quest += f"\n\nCRITICAL VISUAL CONSTRAINT: The user has explicitly requested the following visual styles, themes, and camera aesthetics: '{style_text}'. Ensure ALL generated image descriptions strictly align with this style request. If the requested style implies a non-realistic medium (e.g., Anime, Painting, Sketch), prioritize the requested medium over the 'realistic' default mentioned in the spec."
 
-    output = generate_data(chatbot, prompt_key, quest)
-    res = markdown_parse(output, lang="json")
-    j = json.loads(res)
+    output = None
+    res = None
+    j = None
+    for attempt in range(3):
+        try:
+            output = generate_data(chatbot, prompt_key, quest)
+            res = markdown_parse(output, lang="json") if output else None
+            j = json.loads(res) if res else None
+            if j:
+                break
+            raise ValueError("empty split-and-styling output")
+        except Exception as e:
+            # Salvage: reasoning models frequently drop commas / trailing
+            # separators inside the JSON array. Repair the structure instead
+            # of burning the attempt (or falling back to naive panels).
+            if res:
+                try:
+                    from json_repair import repair_json
+
+                    j = json.loads(repair_json(res))
+                    if j:
+                        logging.info(
+                            "split-and-styling attempt %d/3 salvaged via json_repair",
+                            attempt + 1,
+                        )
+                        break
+                except Exception:
+                    pass
+            logging.warning(f"split-and-styling attempt {attempt + 1}/3 failed: {e}")
+            j = None
+            time.sleep(4 * (attempt + 1))
+    if not isinstance(j, (dict, list)):
+        # LLM outage safety net: keep the draft alive with one shot per
+        # sentence (no styling) instead of crashing the pipeline.
+        logging.error(
+            "split-and-styling failed all attempts; using naive sentence fallback"
+        )
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_text) if s.strip()]
+        if not sentences:
+            sentences = [raw_text.strip()]
+        j = [
+            {
+                "sentence": s,
+                "text_styling": s,
+                "image_source": s,
+                "image_description": s,
+                "motion_prompt": "",
+                "state_transition_prompt": "",
+                "audio_type": "narration",
+                "duration": None,
+                "speaker": None,
+                "shot_type": None,
+                "transition": None,
+                "location_id": None,
+                "relative_prior_shot_index": None,
+                "location_edits": "",
+            }
+            for s in sentences
+        ]
 
     data: Dict[str, list] = {
         "text": [],
@@ -2173,6 +2393,56 @@ def split_text_into_sentences_with_styling(
     }
 
     shots = j.get("shots", []) if isinstance(j, dict) and "shots" in j else j
+    if isinstance(shots, str):
+        shots = [shots]
+    elif isinstance(shots, dict):
+        list_vals = [v for v in shots.values() if isinstance(v, list)]
+        shots = list_vals[0] if list_vals else [shots]
+    shots = [
+        {
+            "sentence": o,
+            "image_source": o,
+            "image_description": o,
+            "text_styling": o,
+        }
+        if isinstance(o, str)
+        else o
+        for o in (shots or [])
+    ]
+
+    def _fill_shot(o):
+        if not isinstance(o, dict):
+            return None
+        sentence = str(
+            o.get("sentence")
+            or o.get("text")
+            or o.get("text_styling")
+            or o.get("image_description")
+            or o.get("description")
+            or ""
+        ).strip()
+        if not sentence:
+            return None
+        o = dict(o)
+        o["sentence"] = sentence
+        for k in ("image_source", "image_description", "text_styling"):
+            if not str(o.get(k) or "").strip():
+                o[k] = sentence
+        return o
+
+    shots = [s for s in (_fill_shot(o) for o in shots) if s]
+    if not shots:
+        logging.error("split-and-styling produced no usable shots; naive fallback")
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_text) if s.strip()]
+        shots = [
+            {
+                "sentence": s,
+                "image_source": s,
+                "image_description": s,
+                "text_styling": s,
+            }
+            for s in (sentences or [raw_text.strip()])
+        ]
     set_registry = j.get("set_registry", {}) if isinstance(j, dict) else {}
 
     location_last_panel: Dict[str, int] = {}
@@ -2184,6 +2454,8 @@ def split_text_into_sentences_with_styling(
         data["text_styling"].append(o.get("text_styling") if is_story else None)
 
         src = o.get("image_source") if is_story else o.get("image_description")
+        if not isinstance(src, str) or not src.strip():
+            src = o.get("sentence") or o.get("image_description") or ""
 
         motion_prompt = o.get("motion_prompt")
         prev_motion = o.get("state_transition_prompt")
@@ -2398,6 +2670,49 @@ def get_img_crops(url, boxes, outdir, target_dim=1000):
     return crops
 
 
+def montage_preview_urls(preview_urls, outdir, cols=2):
+    """Tile scene preview PNGs into one grid image (judge-compatible)."""
+    import io as _io
+
+    from PIL import Image
+
+    from uuid import uuid4 as _uuid4
+
+    imgs = []
+    for u in preview_urls:
+        if not u:
+            continue
+        try:
+            r = requests.get(u, timeout=30)
+            r.raise_for_status()
+            imgs.append(Image.open(_io.BytesIO(r.content)).convert("RGB"))
+        except Exception as e:
+            logging.error(f"montage fetch failed {u}: {e}")
+    if not imgs:
+        return None
+    w = max(im.width for im in imgs)
+    h = max(im.height for im in imgs)
+    cols = max(1, min(cols, len(imgs)))
+    rows = (len(imgs) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * w, rows * h), "#111111")
+    for i, im in enumerate(imgs):
+        r, c = divmod(i, cols)
+        x = c * w + (w - im.width) // 2
+        y = r * h + (h - im.height) // 2
+        sheet.paste(im, (x, y))
+    buf = _io.BytesIO()
+    sheet.save(buf, format="JPEG", quality=88)
+    path = f"/tmp/{_uuid4()}.jpg"
+    with open(path, "wb") as f:
+        f.write(buf.getvalue())
+    return object_storage.upload_file(
+        object_storage.ASSETS_IMG_BUCKET,
+        path,
+        f"lottie-grid-{_uuid4().hex[:8]}.jpg",
+        object_storage.ACL_PUBLIC,
+    )
+
+
 @errors.propogate_ctx_errors
 def create_image_grid(
     prompts: List[str],
@@ -2412,10 +2727,39 @@ def create_image_grid(
     story_context: str = "",
     skip_splitting=False,
     prompt_overrides=None,
+    visual_engine: str = "image",
+    character_list: Optional[List[dict]] = None,
+    lottie_entries_out: Optional[List[dict]] = None,
+    lottie_outdir: Optional[str] = None,
 ):
     """
     Generates a storyboard grid and optionally performs autonomous refinement passes.
     """
+    if str(visual_engine).startswith("lottie"):
+        chars = character_list or []
+        if not chars and character_refs:
+            chars = [
+                {"name": c.get("name", ""), "url": c.get("url")}
+                for c in character_refs
+                if c.get("type") == "character" or not c.get("type")
+            ]
+        entries = lottie_assets.compose_scene_lottie(
+            chatbot,
+            list(prompts),
+            chars,
+            width=int(image_config.get("width") or 1080),
+            height=int(image_config.get("height") or 1920),
+            outdir=lottie_outdir or f"lottie/{os.path.basename(str(outdir).rstrip('/'))}",
+        )
+        if lottie_entries_out is not None:
+            lottie_entries_out.extend(entries or [])
+        preview_urls = [e.get("url") for e in entries if e and e.get("url")]
+        montage_url = montage_preview_urls(preview_urls, outdir) if preview_urls else None
+        grid_prompt = "lottie-scene-compose"
+        if not preview_urls:
+            return None, "No lottie scenes generated", [], grid_prompt
+        return (montage_url or preview_urls[0], preview_urls, preview_urls, grid_prompt)
+
     prompts_desp = "\n".join(
         [f"Panel {index+1}: {item}" for index, item in enumerate(prompts)]
     )

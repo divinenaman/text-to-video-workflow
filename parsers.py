@@ -145,6 +145,12 @@ draft_parser.add_argument(
     "image_engine", type=str, required=False, help="Image Gen Model!"
 )
 draft_parser.add_argument(
+    "visual_engine",
+    type=str,
+    required=False,
+    help="Visual asset engine: image (default) or lottie",
+)
+draft_parser.add_argument(
     "avatar_engine", type=str, required=False, help="Image Gen Model!"
 )
 draft_parser.add_argument(

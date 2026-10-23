@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc, inspect, func
 from flask_restful import Resource, Api, marshal_with, abort
 from flask import Flask, jsonify, send_from_directory, request
+from werkzeug.exceptions import HTTPException
 from elevenlabs.client import ElevenLabs
 import requests
 from flask_restful.reqparse import RequestParser
@@ -93,6 +94,7 @@ from processor import (
     to_style_data,
 )
 import test as T
+from baasha_pipeline import lottie_assets as lottie_assets_mod
 
 import json
 from baasha_pipeline.configs import app_config as baasha_pipeline_config
@@ -232,6 +234,12 @@ def load_prod_env(app):
     baasha_pipeline_config.set("coqui_server", tts_service["COQUI"])
     baasha_pipeline_config.set("primary_chatbot", config["PREFS"]["PRIMARY_CHATBOT"])
     baasha_pipeline_config.set(
+        "chatbot_codegen", config["PREFS"].get("CHATBOT_CODEGEN", "")
+    )
+    baasha_pipeline_config.set(
+        "chatbot_judge", config["PREFS"].get("CHATBOT_JUDGE", "")
+    )
+    baasha_pipeline_config.set(
         "image_engine", config.get("MODELS", "IMAGE_ENGINE", fallback="cf_flux")
     )
     baasha_pipeline_config.set(
@@ -287,12 +295,16 @@ def load_prod_env(app):
         for k in config["SECRETS"].get("OPENROUTER_KEY", "").split(",")
         if k.strip()
     ]
-    baasha_pipeline_auth_config["cloudflare_token"] = (
-        config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").strip()
-    )
-    baasha_pipeline_auth_config["cloudflare_account_id"] = (
-        config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-    )
+    baasha_pipeline_auth_config["cloudflare_token"] = [
+        k.strip()
+        for k in config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").split(",")
+        if k.strip()
+    ]
+    baasha_pipeline_auth_config["cloudflare_account_id"] = [
+        k.strip()
+        for k in config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").split(",")
+        if k.strip()
+    ]
     baasha_pipeline_auth_config["pollinations_key"] = (
         config["SECRETS"].get("POLLINATIONS_KEY", "").strip()
     )
@@ -553,21 +565,17 @@ class DraftResource(Resource):
             db.session.commit()
             logging.info(f"Auto-created missing Idea record: {args.idea_id}")
 
-        if args.voice_id:
-            voice = Voice.query.get(args.voice_id)
-            if not voice:
-                abort(404, message="voice_id not found")
-
+        background_process = None
         try:
+            if args.voice_id:
+                voice = Voice.query.get(args.voice_id)
+                if not voice:
+                    abort(404, message="voice_id not found")
+
             # intialize_conversation(chatbot)
             chatbot = BaashaChat.ChatInterface()
             chatbot.new_conversation()
 
-        except Exception as e:
-            logger.info(e)
-            raise Exception(f"Error while creating chatbot instance, {e}")
-
-        try:
             version = args.version_id
             action = "updated"
 
@@ -631,11 +639,18 @@ class DraftResource(Resource):
                 ),
             )
 
+        except HTTPException:
+            raise
+
         except Exception as e:
             logger.error("Error processing draft ::", e)
             abort(400, message=f"Error : {e}")
 
         finally:
+            # Release the valkey lock if the background task never started
+            # (otherwise the idea stays locked for the full 900s TTL).
+            if background_process is None:
+                valkey_client.delete(lock_key)
             db.session.flush()
 
     @staticmethod
@@ -2325,6 +2340,7 @@ class DraftResource(Resource):
                     "style_id",
                     "background_music_id",
                     "image_engine",
+                    "visual_engine",
                 ]:
                     if data.get(key):
                         video_data_cache[key] = data.get(key)
@@ -2380,6 +2396,12 @@ class DraftResource(Resource):
                 image_engine = data.get("image_engine") or video_data_cache.get(
                     "image_engine"
                 )
+
+                visual_engine = data.get("visual_engine") or video_data_cache.get(
+                    "visual_engine"
+                ) or "image"
+                if image_engine and str(image_engine).startswith("lottie"):
+                    visual_engine = image_engine
 
                 character_reference = data["character_ref"] or None
                 character_reference = parse_user_provided_character(character_reference)
@@ -2665,6 +2687,7 @@ class DraftResource(Resource):
                             user_characters=character_reference,
                             cinematic_data=video_data.get("cinematic"),
                             prompt_overrides=prompt_overrides,
+                            visual_engine=visual_engine,
                         )
                         target_draft.character_ref = json.dumps(character_list)
 
@@ -2787,6 +2810,7 @@ class DraftResource(Resource):
                     all_crops = []
                     all_grids = []
                     all_other_grids = []
+                    all_lottie_scenes = []
 
                     # Original prompt collection
                     all_prompts = list(
@@ -2799,8 +2823,15 @@ class DraftResource(Resource):
                     chunk_idx = 0
                     current_style_refs = []
                     for chunk_num in range(0, chunk_count + remainder_chunk):
+                        if chunk_idx >= len(all_prompts):
+                            break
 
-                        if chunk_num >= chunk_count:
+                        if str(visual_engine).startswith("lottie"):
+                            # Compose all panels in ONE call: per-panel calls
+                            # would each index their first scene as scene_0 and
+                            # overwrite each other's uploads.
+                            chunk_size = len(all_prompts) - chunk_idx
+                        elif chunk_num >= chunk_count:
                             chunk_size = 1
 
                         chunk_prompts = all_prompts[chunk_idx : chunk_idx + chunk_size]
@@ -2861,6 +2892,10 @@ class DraftResource(Resource):
                                 refine_grid_count=1 if data.judge_grids else 0,
                                 story_context=target_draft.story,
                                 prompt_overrides=prompt_overrides,
+                                visual_engine=visual_engine,
+                                character_list=character_list,
+                                lottie_entries_out=all_lottie_scenes,
+                                lottie_outdir=f"lottie/{data['idea_id']}.{target_draft_version}",
                             )
 
                             if res:
@@ -2943,9 +2978,11 @@ class DraftResource(Resource):
                         uploaded_crop_urls = []
                         for i, gi in enumerate(all_crops):
                             if i < len(image_descriptors):
+                                if not gi:
+                                    continue
                                 crop_url = (
                                     upload_image(gi)
-                                    if not gi.startswith("http")
+                                    if not str(gi).startswith("http")
                                     else gi
                                 )
                                 uploaded_crop_urls.append(crop_url)
@@ -2957,6 +2994,11 @@ class DraftResource(Resource):
 
                         video_data["grid_crops"] = uploaded_crop_urls
                         video_data["images"] = uploaded_crop_urls
+
+                        if str(visual_engine).startswith("lottie") and all_lottie_scenes:
+                            video_data["lottie_scenes"] = [
+                                e for e in all_lottie_scenes if e
+                            ]
 
                         target_draft.character_ref = json.dumps(character_list)
                         target_draft.video_data = json.dumps(video_data)
@@ -2970,7 +3012,9 @@ class DraftResource(Resource):
                     return stop_gen(target_draft.stage)
 
                 if target_draft.stage < DraftStages.IMAGE_UPSCALE:
-                    if getattr(data, "upscale_grid_crops", True) and video_data.get(
+                    if str(visual_engine).startswith("lottie"):
+                        logging.info("lottie visual engine: skipping diffusion upscale")
+                    elif getattr(data, "upscale_grid_crops", True) and video_data.get(
                         "use_image_grid"
                     ):
                         grid_crops = video_data.get("grid_crops", [])
@@ -3188,10 +3232,43 @@ class DraftResource(Resource):
                         target_draft.video_data = json.dumps(video_data)
                         db_session.commit()
 
-                    remotion_config_url = generate_remotion_video_config(video_data)
+                    if str(visual_engine).startswith("lottie"):
+                        scene_entries = [
+                            e
+                            for e in (video_data.get("lottie_scenes") or [])
+                            if e and e.get("lottie_url")
+                        ]
+                        if not scene_entries:
+                            scene_entries = [
+                                {
+                                    "lottie_url": None,
+                                    "url": u,
+                                }
+                                for u in (video_data.get("images") or [])
+                            ]
+                        audio_url = None
+                        audios = video_data.get("audios") or []
+                        if audios and isinstance(audios[0], (list, tuple)):
+                            audio_url = audios[0][0] if audios[0] else None
+                        elif audios and isinstance(audios[0], str):
+                            audio_url = audios[0]
+                        lottie_out = lottie_assets_mod.create_lottie_timeline(
+                            scene_entries,
+                            width=img_width or 1080,
+                            height=img_height or 1920,
+                            audio_url=audio_url,
+                            outdir=f"lottie/{data['idea_id']}.{target_draft_version}",
+                        )
+                        if lottie_out:
+                            video_data["lottie"] = lottie_out
+                            target_draft.video_data = json.dumps(video_data)
+                            if lottie_out.get("timeline_url"):
+                                target_draft.remotion_config = lottie_out["timeline_url"]
+                    else:
+                        remotion_config_url = generate_remotion_video_config(video_data)
 
-                    if remotion_config_url:
-                        target_draft.remotion_config = remotion_config_url
+                        if remotion_config_url:
+                            target_draft.remotion_config = remotion_config_url
 
                     target_draft.stage = DraftStages.AUDIO_GEN_VIDEO_CONFIG_GEN
                     on_stage_complete(target_draft.stage)
@@ -4442,6 +4519,22 @@ def serve_moodboard_assets(path):
 @app.route("/character-bible", methods=["GET"])
 def serve_character_bible():
     return send_from_directory("static/character_bible", "index.html")
+
+
+@app.route("/lottie/player", methods=["GET"])
+def serve_lottie_player():
+    return send_from_directory("static", "lottie_player.html")
+
+
+@app.route("/lottie/demo", methods=["GET"])
+@app.route("/lottie/demo/", methods=["GET"])
+def serve_lottie_demo():
+    return send_from_directory("static/lottie_demo", "index.html")
+
+
+@app.route("/lottie/demo/<path:path>")
+def serve_lottie_demo_assets(path):
+    return send_from_directory("static/lottie_demo", path)
 
 
 @app.route("/character-bible/<path:path>")
