@@ -388,6 +388,15 @@ def author_character_rig(
                 prompt_key="lottie-rig-judge",
             )
             last_report = report
+            if report is None:
+                # Fail CLOSED: without vision judging an authored rig is far
+                # likelier to be anatomically broken (detached parts, scatter)
+                # than acceptable - accept nothing unjudged. Loop exhausts to
+                # the template fallback if judges stay dead.
+                last_gate = "G2-vision-unavailable"
+                last_errors = ["vision judge unavailable (all judge providers failed)"]
+                logging.error(f"vision judge unavailable ({char_name}) - gate fails closed")
+                continue
             if report and not report.get("pass", False) and (
                 int(report.get("consistency_score", 0)) < RIG_PASS_SCORE
                 or any(
@@ -741,6 +750,12 @@ def compose_scene_lottie(
             report = None
             if use_vision_judge:
                 report = _vision_judge(chatbot, sheet_png, panel, char_meta)
+                if report is None:
+                    # Fail CLOSED (mirrors the rig gate): no judge, no pass.
+                    last_gate = "G2-vision-unavailable"
+                    last_errors = ["vision judge unavailable (all judge providers failed)"]
+                    logging.error(f"vision judge unavailable (scene {idx}) - gate fails closed")
+                    continue
                 if report and not report.get("pass", False) and (
                     int(report.get("consistency_score", 0)) < PASS_SCORE
                     or any(
