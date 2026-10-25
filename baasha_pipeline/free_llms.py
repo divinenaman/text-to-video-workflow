@@ -31,7 +31,7 @@ CLOUDFLARE_RUN_URL = (
     "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
 )
 CLOUDFLARE_DEFAULT_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
-GEMINI_REST_TIMEOUT = 480
+GEMINI_REST_TIMEOUT = 180
 CLOUDFLARE_MAX_TOKENS = 4096
 
 REQUEST_TIMEOUT = 180

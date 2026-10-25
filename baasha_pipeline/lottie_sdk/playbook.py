@@ -24,100 +24,36 @@ class PlaybookEntry:
 
 
 _MINIMAL_EDIT = (
-    "MINIMAL EDIT RULE: change ONLY the values named above. Keep background, "
-    "props, clip calls, part names, hierarchy and overall structure exactly "
-    "as they are - do not redraw or redesign the scene. This rule describes "
-    "WHAT to change, never how much to send: your reply must still be the "
+    "MINIMAL EDIT RULE: fix the specific reported issue while preserving "
+    "unrelated design choices. This rule describes WHAT to change, never how "
+    "much to send: your reply must still be the "
     "COMPLETE file from the first line to the closing bracket, in ONE "
     "```python block - never a snippet, fragment, excerpt or diff."
 )
 
 FIX_PLAYBOOK: List[PlaybookEntry] = [
     PlaybookEntry(
-        id="scale_too_small",
-        pattern=r"too small: occupies",
-        fix=(
-            "SCALE: raise inst.scale into the 35-75% frame-height band - "
-            "compute scale = round(0.5 * H / rig_height * 100) (e.g. H=1920, "
-            "rig 512 -> 188) and set only that number. Do not move props."
-        ),
-    ),
-    PlaybookEntry(
-        id="scale_too_large",
-        pattern=r"too large: occupies",
-        fix=(
-            "SCALE: lower inst.scale into the 35-75% band - "
-            "scale = round(0.6 * H / rig_height * 100), set only that number."
-        ),
-    ),
-    PlaybookEntry(
-        id="crop_h",
-        pattern=r"cropped horizontally|off-canvas horizontally",
-        fix=(
-            "FIT WIDTH: eff_w = rig_width * scale / 100 must be <= 0.92 * W. "
-            "Reduce inst.scale by factor 0.92*W/eff_w (round), then set "
-            "inst.x = clamp so the bbox fits: x in "
-            "[eff_w/2 + 0.03*W, W - eff_w/2 - 0.03*W]."
-        ),
-    ),
-    PlaybookEntry(
-        id="crop_v",
-        pattern=r"cropped vertically",
-        fix=(
-            "FIT HEIGHT: eff_h = rig_height * scale / 100 must be <= 0.96 * H. "
-            "Reduce inst.scale by factor 0.96*H/eff_h, then set inst.y so the "
-            "bbox fits: y in [eff_h/2, H - eff_h/2] (keep feet >= 0.45*H)."
-        ),
-    ),
-    PlaybookEntry(
-        id="floats_upper",
-        pattern=r"floats in the upper frame",
-        fix=(
-            "GROUNDING: move inst.y down so feet (y + eff_h/2) land in "
-            "[0.45*H, 0.98*H]; e.g. y = H - eff_h/2 - 0.05*H. Change y only."
-        ),
-    ),
-    PlaybookEntry(
-        id="missing_bg",
-        pattern=r"background is missing",
-        fix=(
-            "BACKGROUND: set Scene(..., background=(r, g, b, 1.0)) - a sky/wall "
-            "base tuple of floats 0..1 (NOT a hex string), e.g. "
-            "(0.55, 0.80, 0.95, 1.0)."
-        ),
-    ),
-    PlaybookEntry(
-        id="set_dressing",
-        pattern=r"set dressing: only \d+ prop",
-        fix=(
-            "PROPS: add via scene.add_prop - (1) a full-width ground rect: "
-            "width=1080, height~420, x=W/2 (prop anchor is its CENTER, so "
-            "x must be W/2 to span the frame), y near the bottom edge; "
-            "(2) >=1 story prop from the panel (shed, packet, tool, flower). "
-            "At least 2 props total."
-        ),
-    ),
-    PlaybookEntry(
-        id="no_motion",
-        pattern=r"no motion - the scene is static",
-        fix=(
-            "MOTION: call inst.play(\"<clip>\") on at least one instance "
-            "before scene.place_character(inst) - use a clip listed in the "
-            "error; keep the existing placement values."
-        ),
-    ),
-    PlaybookEntry(
         id="empty_scene",
         pattern=r"scene is empty \(no characters or props\)",
         fix=(
-            "CONTENT: place at least one character (place_character) and the "
-            "ground prop; keep everything else from the current source."
+            "CONTENT: add the scene element(s) required by the panel using "
+            "place_character and/or add_prop. Preserve its intended art direction."
         ),
     ),
     PlaybookEntry(
         id="bad_duration",
         pattern=r"scene duration must be > 0",
         fix="DURATION: Scene(..., duration=90) at fps=30 (3 seconds).",
+    ),
+    PlaybookEntry(
+        id="bad_scene_dimensions",
+        pattern=r"scene width and height must be > 0",
+        fix="DIMENSIONS: set positive width and height matching the requested canvas.",
+    ),
+    PlaybookEntry(
+        id="bad_scene_fps",
+        pattern=r"scene fps must be > 0",
+        fix="FRAME RATE: set a positive fps value on the Scene.",
     ),
     PlaybookEntry(
         id="part_offcanvas",
@@ -142,7 +78,8 @@ FIX_PLAYBOOK: List[PlaybookEntry] = [
         fix=(
             "BLANK CHECKLIST: (1) every root part position inside the rig "
             "canvas; (2) every fill has alpha > 0 (4-tuple ending in 1.0, not "
-            "0.0); (3) shapes non-empty with a drawable rect/ellipse; "
+            "0.0); (3) shapes non-empty with valid drawable geometry, including "
+            "matching path vertices and tangent arrays; "
             "(4) instance x,y on the scene canvas. Fix only these values."
         ),
     ),
@@ -160,10 +97,9 @@ FIX_PLAYBOOK: List[PlaybookEntry] = [
         id="shape_kind",
         pattern=r"ShapeKind\.|AttributeError: [A-Z_]+$",
         fix=(
-            "ShapeKind has ONLY two members: ShapeKind.ELLIPSE and "
-            "ShapeKind.RECT. POLYGON/PATH/POS do not exist - replace any "
-            "polygon or path shape with a single RECT (best-effort bounding "
-            "box) or a small group of rects."
+            "Use only supported members ShapeKind.ELLIPSE, ShapeKind.RECT, "
+            "and ShapeKind.PATH. Check the reported member name and replace "
+            "unsupported geometry with the closest supported shape."
         ),
     ),
     PlaybookEntry(
@@ -188,6 +124,21 @@ FIX_PLAYBOOK: List[PlaybookEntry] = [
             "indentation, defining every name you use (Shape, Part, Prop, "
             "Scene, CharacterInstance, CHARACTERS). NEVER reply with only the "
             "changed lines or a partial file; do not change the design."
+        ),
+    ),
+    PlaybookEntry(
+        id="character_api",
+        pattern=(
+            r"CharacterInstance.*(?:animate|play_clip)|"
+            r"set_pose\(\).*unexpected keyword|unknown clip:"
+        ),
+        fix=(
+            "CHARACTER API: the only animation methods are "
+            "`instance.set_pose(pose_name)` and `instance.play(clip_name)`. "
+            "Use the exact pose or clip names listed for that character in "
+            "CHARACTER_API; never use `animate`, `play_clip`, or keyword "
+            "`name=`. If the desired action has no listed clip, use the closest "
+            "listed pose or leave the character static."
         ),
     ),
     PlaybookEntry(

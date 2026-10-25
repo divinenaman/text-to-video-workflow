@@ -117,6 +117,12 @@ def _coerce_xy(v: Any) -> Tuple[float, float]:
     raise ValueError(f"cannot parse coordinate {v!r} - use a (x, y) tuple of numbers")
 
 
+def _coerce_scale_percent(value: Any) -> float:
+    """Treat small positive instance scales as factors, matching rig scales."""
+    scale = float(value)
+    return scale * 100.0 if 0.0 < scale <= 8.0 else scale
+
+
 def _coerce_shapes(v: Any) -> Any:
     """Accept shapes='rect', shapes={'kind': ...}, or ['rect', {...}]."""
     if isinstance(v, str):
@@ -145,7 +151,7 @@ _KIND_SYNONYMS = {
 def _coerce_kind(v: Any) -> Any:
     if isinstance(v, str):
         s = _KIND_SYNONYMS.get(v.strip().lower(), v.strip().lower())
-        if s in ("ellipse", "rect"):
+        if s in ("ellipse", "rect", "path"):
             return s
         # Models sometimes put descriptors here ("short_messy" for hair).
         # An ellipse is the safe paper-doll rendering - never fail G0 on it.
@@ -156,6 +162,7 @@ def _coerce_kind(v: Any) -> Any:
 class ShapeKind(str, Enum):
     ELLIPSE = "ellipse"
     RECT = "rect"
+    PATH = "path"
 
 
 class Shape(BaseModel):
@@ -163,6 +170,10 @@ class Shape(BaseModel):
     size: XY = (100.0, 100.0)
     position: XY = (0.0, 0.0)
     corner_radius: float = 0.0
+    vertices: List[XY] = Field(default_factory=list)
+    in_tangents: List[XY] = Field(default_factory=list)
+    out_tangents: List[XY] = Field(default_factory=list)
+    closed: bool = True
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -182,6 +193,35 @@ class Shape(BaseModel):
         if v[0] <= 0 or v[1] <= 0:
             raise ValueError("shape size must be positive")
         return v
+
+    @field_validator("vertices", "in_tangents", "out_tangents", mode="before")
+    @classmethod
+    def _path_points_before(cls, v: Any) -> Any:
+        if v is None:
+            return []
+        if not isinstance(v, (list, tuple)):
+            raise ValueError("path points must be a list of (x, y) coordinates")
+        return [_coerce_xy(point) for point in v]
+
+    @model_validator(mode="after")
+    def _valid_path(self) -> "Shape":
+        if self.kind != ShapeKind.PATH:
+            return self
+        min_points = 3 if self.closed else 2
+        if len(self.vertices) < min_points:
+            raise ValueError(
+                f"{'closed' if self.closed else 'open'} path needs at least "
+                f"{min_points} vertices"
+            )
+        for label, tangents in (
+            ("in_tangents", self.in_tangents),
+            ("out_tangents", self.out_tangents),
+        ):
+            if tangents and len(tangents) != len(self.vertices):
+                raise ValueError(
+                    f"path {label} must have one coordinate per vertex"
+                )
+        return self
 
 
 class Part(BaseModel):
@@ -372,10 +412,15 @@ class CharacterInstance(BaseModel):
     pose: Optional[str] = None
     clip: Optional[str] = None
 
+    @field_validator("scale", mode="before")
+    @classmethod
+    def _scale_as_percent(cls, value: Any) -> float:
+        return _coerce_scale_percent(value)
+
     def place(self, x: float, y: float, scale: float = 100.0, rotation: float = 0.0):
         self.x = x
         self.y = y
-        self.scale = scale
+        self.scale = _coerce_scale_percent(scale)
         self.rotation = rotation
         return self
 
@@ -448,7 +493,30 @@ class Scene(BaseModel):
     def _background_before(cls, v: Any) -> Any:
         return _coerce_rgba(v)
 
-    def place_character(self, instance: CharacterInstance) -> CharacterInstance:
+    def place_character(
+        self,
+        instance: CharacterInstance,
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+        scale: Optional[float] = None,
+        rotation: Optional[float] = None,
+        position: Optional[XY] = None,
+    ) -> CharacterInstance:
+        if position is not None:
+            if x is not None or y is not None:
+                raise ValueError("use either position or x/y, not both")
+            x, y = position
+        if (x is None) != (y is None):
+            raise ValueError("character placement requires both x and y")
+        if x is not None and y is not None:
+            instance.place(
+                x,
+                y,
+                scale=instance.scale if scale is None else scale,
+                rotation=instance.rotation if rotation is None else rotation,
+            )
+        elif scale is not None or rotation is not None:
+            raise ValueError("scale and rotation require x/y or position")
         self.characters.append(instance)
         return instance
 

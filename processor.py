@@ -754,6 +754,7 @@ def find_story_characters(
     user_characters=None,
     cinematic_data=None,
     prompt_overrides=None,
+    visual_engine="image",
 ):
     banned_words = get_prompt_text("banned-words")
 
@@ -773,6 +774,18 @@ def find_story_characters(
     prompt = get_prompt_text(prompt_key, prompt_overrides).format(
         TEXT=story_text, BANNED_WORDS=banned_words
     )
+    if str(visual_engine).startswith("lottie"):
+        prompt += (
+            "\n\n### Lottie cast constraints\n"
+            "Return only sentient characters explicitly present in the story: "
+            "people, animals, or clearly sentient beings. Do not cast locations, "
+            "buildings, architecture, weather, objects, or abstract ideas as "
+            "characters; they belong in scene artwork. Do not invent a character, "
+            "name, age, occupation, relationship, or life-stage change that the "
+            "story does not state. Keep one canonical entry for each character "
+            "unless the story explicitly depicts that same character at distinct "
+            "ages or physical states. Preserve the story's stated identity details."
+        )
 
     identified_characters = set()
     if user_characters:
@@ -954,6 +967,7 @@ def generate_character_bible(
         user_characters=user_characters,
         cinematic_data=cinematic_data,
         prompt_overrides=prompt_overrides,
+        visual_engine=visual_engine,
     )
 
     char_image_config = image_config.copy()
@@ -999,7 +1013,10 @@ def generate_character_bible(
             nonbeing = re.search(
                 r"\b(packet|seed|flower|sunflower|plant|tree|rock|stone|ball|toy|"
                 r"object|item|tool|shovel|spade|house|shed|door|car|box|book|"
-                r"sword|crown|cup|phone|pot|can|egg|bread|cake)\b",
+                r"sword|crown|cup|phone|pot|can|egg|bread|cake|stepwell|"
+                r"landmark|location|setting|structure|architecture|temple|"
+                r"palace|fort|city|street|alley|river|mountain|forest|garden|"
+                r"building|weather|monsoon|cloud|waterfall)\b",
                 text,
             )
             if being:
@@ -2731,6 +2748,7 @@ def create_image_grid(
     character_list: Optional[List[dict]] = None,
     lottie_entries_out: Optional[List[dict]] = None,
     lottie_outdir: Optional[str] = None,
+    existing_lottie_scenes: Optional[List[dict]] = None,
 ):
     """
     Generates a storyboard grid and optionally performs autonomous refinement passes.
@@ -2743,10 +2761,22 @@ def create_image_grid(
                 for c in character_refs
                 if c.get("type") == "character" or not c.get("type")
             ]
+        routing_cfg = app_config.get().get("chatbot_codegen")
+        scene_chatbot = chatbot
+        if routing_cfg and str(routing_cfg).strip():
+            try:
+                scene_chatbot = BaashaChat.ChatInterface(str(routing_cfg).strip())
+            except Exception as e:
+                logging.warning(
+                    "lottie: scene codegen chatbot chain failed to load (%s); "
+                    "falling back to primary chain",
+                    e,
+                )
         entries = lottie_assets.compose_scene_lottie(
-            chatbot,
+            scene_chatbot,
             list(prompts),
             chars,
+            existing_scenes=existing_lottie_scenes,
             width=int(image_config.get("width") or 1080),
             height=int(image_config.get("height") or 1920),
             outdir=lottie_outdir or f"lottie/{os.path.basename(str(outdir).rstrip('/'))}",

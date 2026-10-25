@@ -61,11 +61,11 @@ class MockChatbot:
         self.calls.append(text)
         if "Motion Continuity Auditor" in text or "consistency_score" in text and "Audit criteria" in text:
             return self.judge
-        if "paper-doll character rig" in text or "Senior Motion Designer who authors character" in text:
+        if "character designer" in text:
             return f"```python\n{self.rig_src}\n```"
         # Scene prompts (compose + fix) before the generic gate-failure check -
         # both templates contain "failed a quality gate".
-        if "composed Lottie scene failed" in text or "Compose a scene" in text or "INSTANTIATING prebuilt" in text:
+        if "composed Lottie scene failed" in text or "art director and vector illustrator" in text:
             return f"```python\n{self.scene_src}\n```"
         if "previously authored" in text.lower() or "failed a quality gate" in text:
             return f"```python\n{self.rig_src}\n```"
@@ -111,6 +111,39 @@ def test_author_character_rig_happy_path(fake_storage):
     assert any(k.endswith("animation.json") for k in fake_storage)
 
 
+def test_lottie_ask_uses_task_specific_system_prompt():
+    class PromptTrackingChatbot:
+        def fetch_text(self, payload, **kwargs):
+            self.system_prompt = kwargs.get("system_prompt")
+            return "```python\nscene = None\n```"
+
+    chatbot = PromptTrackingChatbot()
+    assert lottie_assets._ask(chatbot, "Create a Lottie scene.")
+    assert "Lottie vector-graphics" in chatbot.system_prompt
+    assert "do not impose social-media" in chatbot.system_prompt
+
+
+def test_unavailable_rig_judge_stops_without_repeating(fake_storage, monkeypatch):
+    judge_calls = []
+
+    def unavailable_judge(*args, **kwargs):
+        judge_calls.append(True)
+        return None
+
+    monkeypatch.setattr(lottie_assets, "_vision_judge", unavailable_judge)
+    entry = lottie_assets.author_character_rig(
+        MockChatbot(),
+        "Maya",
+        "A botanist in a cobalt raincoat.",
+        outdir="lottie/test",
+        use_vision_judge=True,
+        max_iters=3,
+    )
+
+    assert entry["lottie_error"]["gate"] == "G2-vision-unavailable"
+    assert len(judge_calls) == 1
+
+
 def test_author_character_rig_fix_loop(fake_storage):
     broken = "rig = CharacterRig(name='x', parts=[])  # will fail model? no - empty parts fails G0"
     # empty parts actually raises on validate_rig (no parts)
@@ -125,10 +158,31 @@ def test_author_character_rig_fix_loop(fake_storage):
         max_iters=2,
     )
     assert entry.get("lottie_error")
-    assert entry.get("lottie_fallback") is True
-    assert entry["url"] is not None
-    assert entry["lottie_url"] is not None
+    assert entry.get("lottie_fallback") is not True
+    assert entry["url"] is None
+    assert entry["lottie_url"] is None
+    assert entry["lottie_source_last"]
+    assert any(k.endswith("authored_failed.py") for k in fake_storage)
     assert len([c for c in chatbot.calls if "failed a quality gate" in c]) >= 1
+
+
+def test_compose_scene_failure_does_not_substitute_fallback(fake_storage):
+    chatbot = MockChatbot(scene_src="scene = Scene(duration=0)")
+    entries = lottie_assets.compose_scene_lottie(
+        chatbot,
+        ["A lone lantern glows in a quiet forest."],
+        [],
+        outdir="lottie/test",
+        use_vision_judge=False,
+        max_iters=1,
+    )
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["lottie_url"] is None
+    assert entry["url"] is None
+    assert entry["lottie_error"]
+    assert entry.get("lottie_fallback") is not True
+    assert any(k.endswith("authored_failed.py") for k in fake_storage)
 
 
 def test_author_recovers_from_bad_then_good(fake_storage):
@@ -147,7 +201,7 @@ def test_author_recovers_from_bad_then_good(fake_storage):
             self.calls.append(text)
             if "Motion Continuity Auditor" in text or "Audit criteria" in text:
                 return self.judge
-            if "authors character" in text or "failed a quality gate" in text:
+            if "character designer" in text or "failed a quality gate" in text:
                 self.n_rig += 1
                 if self.n_rig == 1:
                     return "```python\nrig = nope\n```"
@@ -185,6 +239,153 @@ def test_compose_scene_happy_path(fake_storage, monkeypatch):
     assert e["lottie_url"] and e["url"]
 
 
+def test_compose_scene_reuses_all_previously_accepted_scenes():
+    class UnexpectedChatbot:
+        def fetch_text(self, *args, **kwargs):
+            raise AssertionError("accepted scenes should not be regenerated")
+
+    saved = [
+        {
+            "panel_index": 0,
+            "url": "http://x/scene0/preview.png",
+            "lottie_url": "http://x/scene0/animation.json",
+        },
+        {
+            "panel_index": 1,
+            "url": "http://x/scene1/preview.png",
+            "lottie_url": "http://x/scene1/animation.json",
+        },
+    ]
+
+    entries = lottie_assets.compose_scene_lottie(
+        UnexpectedChatbot(),
+        ["Panel zero", "Panel one"],
+        [],
+        existing_scenes=saved,
+    )
+
+    assert entries == saved
+
+
+def test_scene_vision_repair_uses_text_directives(fake_storage, monkeypatch):
+    monkeypatch.setattr(lottie_assets, "_fetch_text", lambda url: GOOD_RIG_SRC)
+    reports = iter(
+        [
+            {
+                "pass": False,
+                "consistency_score": 60,
+                "issues": [{"issue": "weak composition", "fix_directive": "Move Maya left."}],
+            },
+            json.loads(JUDGE_PASS),
+        ]
+    )
+    monkeypatch.setattr(
+        lottie_assets,
+        "_vision_judge",
+        lambda *args, **kwargs: next(reports),
+    )
+
+    class PayloadTrackingChatbot(MockChatbot):
+        def __init__(self):
+            super().__init__()
+            self.payloads = []
+
+        def fetch_text(self, payload, **kwargs):
+            self.payloads.append(payload)
+            return super().fetch_text(payload, **kwargs)
+
+    chatbot = PayloadTrackingChatbot()
+    entries = lottie_assets.compose_scene_lottie(
+        chatbot,
+        ["Maya waves in a sunlit workshop."],
+        [
+            {
+                "name": "maya",
+                "url": "http://x/preview.png",
+                "lottie_url": "http://x/animation.json",
+                "lottie_source_url": "http://x/source.py",
+            }
+        ],
+        outdir="lottie/test",
+        use_vision_judge=True,
+        max_iters=2,
+    )
+
+    assert entries[0]["lottie_url"]
+    repair = next(p for p in chatbot.payloads if isinstance(p, str) and "Move Maya left." in p)
+    assert "vision judge reviewed the contact sheet" in repair
+
+
+def test_scene_vision_repair_handles_rejection_without_issues(fake_storage, monkeypatch):
+    monkeypatch.setattr(lottie_assets, "_fetch_text", lambda url: GOOD_RIG_SRC)
+    reports = iter(
+        [
+            {
+                "pass": False,
+                "consistency_score": 60,
+                "issues": [],
+                "summary": "The scene feels too generic.",
+            },
+            json.loads(JUDGE_PASS),
+        ]
+    )
+    monkeypatch.setattr(
+        lottie_assets,
+        "_vision_judge",
+        lambda *args, **kwargs: next(reports),
+    )
+
+    chatbot = MockChatbot()
+    entries = lottie_assets.compose_scene_lottie(
+        chatbot,
+        ["Maya waves in a sunlit workshop."],
+        [
+            {
+                "name": "maya",
+                "url": "http://x/preview.png",
+                "lottie_url": "http://x/animation.json",
+                "lottie_source_url": "http://x/source.py",
+            }
+        ],
+        outdir="lottie/test",
+        use_vision_judge=True,
+        max_iters=2,
+    )
+
+    assert entries[0]["lottie_url"]
+    repair = next(c for c in chatbot.calls if "judge returned a failing score" in c)
+    assert "The scene feels too generic." in repair
+
+
+def test_unavailable_scene_judge_stops_without_repeating(fake_storage, monkeypatch):
+    monkeypatch.setattr(lottie_assets, "_fetch_text", lambda url: GOOD_RIG_SRC)
+    judge_calls = []
+
+    def unavailable_judge(*args, **kwargs):
+        judge_calls.append(True)
+        return None
+
+    monkeypatch.setattr(lottie_assets, "_vision_judge", unavailable_judge)
+    entries = lottie_assets.compose_scene_lottie(
+        MockChatbot(),
+        ["Maya waves in a sunlit workshop."],
+        [
+            {
+                "name": "maya",
+                "url": "http://x/preview.png",
+                "lottie_url": "http://x/animation.json",
+                "lottie_source_url": "http://x/source.py",
+            }
+        ],
+        outdir="lottie/test",
+        use_vision_judge=True,
+        max_iters=3,
+    )
+
+    assert entries[0]["lottie_error"]["gate"] == "G2-vision-unavailable"
+    assert len(judge_calls) == 1
+
+
 def test_create_lottie_timeline_player(fake_storage, monkeypatch):
     def fake_fetch(url):
         if url.endswith("animation.json"):
@@ -213,6 +414,12 @@ def test_judge_prompts_format():
         out = tpl.format(SPEC="spec", CHARACTER_LIST="[]")
         assert "consistency_score" in out
         assert "pass" in out
+    assert "human face hidden/absent" in lottie_assets._load_prompt(
+        "lottie-rig-judge"
+    ).format(SPEC="spec", CHARACTER_LIST="[]")
+    assert "front-facing or three-quarter character" in lottie_assets._load_prompt(
+        "lottie-character-rig"
+    ).format(NAME="Asha", DESCRIPTION="young kite maker", STYLE="editorial", COMPLEXITY="L1")
 
 
 def test_scene_fix_prompt_mentions_playbook():

@@ -330,7 +330,7 @@ def load_prod_env(app):
     """
     baasha_pipeline_config.set("global_chatbot_ctx", global_ctx)
 
-    logger.info(baasha_pipeline_config.get())
+    logger.info("Baasha pipeline configuration loaded")
 
 
 def extract_and_upload_last_frame(video_url):
@@ -2822,11 +2822,12 @@ class DraftResource(Resource):
                     prev_chunk_size = chunk_size
                     chunk_idx = 0
                     current_style_refs = []
+                    lottie_visual = str(visual_engine).startswith("lottie")
                     for chunk_num in range(0, chunk_count + remainder_chunk):
                         if chunk_idx >= len(all_prompts):
                             break
 
-                        if str(visual_engine).startswith("lottie"):
+                        if lottie_visual:
                             # Compose all panels in ONE call: per-panel calls
                             # would each index their first scene as scene_0 and
                             # overwrite each other's uploads.
@@ -2896,17 +2897,28 @@ class DraftResource(Resource):
                                 character_list=character_list,
                                 lottie_entries_out=all_lottie_scenes,
                                 lottie_outdir=f"lottie/{data['idea_id']}.{target_draft_version}",
+                                existing_lottie_scenes=video_data.get("lottie_scenes") or [],
                             )
 
                             if res:
                                 story_grid, grid_imgs, other_grids, grid_prompt = res
+
+                                if lottie_visual and not story_grid:
+                                    logging.error(
+                                        f"Lottie scene generation returned no previews: {grid_imgs}"
+                                    )
+                                    chunk_idx = len(all_prompts)
+                                    retries = -1
+                                    break
 
                                 crop_count = (
                                     len(grid_imgs)
                                     if grid_imgs
                                     else (1 if story_grid else 0)
                                 )  # for chunk size 1, story grid also counted
-                                if not story_grid or len(chunk_prompts) != crop_count:
+                                if lottie_visual:
+                                    retries = -1
+                                elif not story_grid or len(chunk_prompts) != crop_count:
                                     if retry_count < retries:
                                         logging.info(
                                             f"retrying grid gen, current grid : {story_grid} \n crops : {grid_imgs}"
@@ -2942,6 +2954,34 @@ class DraftResource(Resource):
                             break
 
                     chatbot_bbox.delete_conversation()
+
+                    if lottie_visual:
+                        successful_scenes = [
+                            entry
+                            for entry in all_lottie_scenes
+                            if entry and entry.get("lottie_url")
+                        ]
+                        if len(successful_scenes) != len(all_prompts):
+                            failed_panels = [
+                                entry.get("panel_index")
+                                for entry in all_lottie_scenes
+                                if not entry or not entry.get("lottie_url")
+                            ]
+                            video_data["lottie_scenes"] = all_lottie_scenes
+                            target_draft.video_data = json.dumps(video_data)
+                            db_session.commit()
+                            logging.error(
+                                "Lottie scene generation passed %s/%s panels; "
+                                "failed panels: %s",
+                                len(successful_scenes),
+                                len(all_prompts),
+                                failed_panels,
+                            )
+                            raise RuntimeError(
+                                f"Lottie scene generation passed "
+                                f"{len(successful_scenes)}/{len(all_prompts)} panels; "
+                                f"failed panels: {failed_panels}."
+                            )
 
                     # Handle accumulated results
                     if all_grids:

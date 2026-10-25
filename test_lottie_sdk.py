@@ -10,6 +10,7 @@ from baasha_pipeline.lottie_sdk import (
     LottieValidationError,
     Part,
     Pose,
+    Prop,
     Scene,
     Shape,
     ShapeKind,
@@ -63,6 +64,16 @@ class TestModels:
     def test_clip_unsorted_rejected(self):
         with pytest.raises(ValidationError):
             Clip(name="c", keyframes=[(10, "neutral"), (5, "neutral")])
+
+    def test_path_requires_valid_vertices_and_tangents(self):
+        with pytest.raises(ValidationError):
+            Shape(kind=ShapeKind.PATH, vertices=[(0, 0), (10, 10)])
+        with pytest.raises(ValidationError):
+            Shape(
+                kind=ShapeKind.PATH,
+                vertices=[(0, 0), (10, 10), (20, 0)],
+                out_tangents=[(0, 0)],
+            )
 
     def test_instance_unknown_pose_raises(self):
         rig = build_example_rig()
@@ -208,6 +219,33 @@ class TestCompiler:
         doc = compile_prop(p)
         assert_valid_lottie(doc)
 
+    def test_compile_curved_path(self):
+        rig = CharacterRig(
+            name="path_character",
+            parts=[
+                Part(
+                    name="cape",
+                    shapes=[
+                        Shape(
+                            kind=ShapeKind.PATH,
+                            vertices=[(0, 0), (40, 80), (80, 0)],
+                            in_tangents=[(0, 0), (-20, 0), (0, 0)],
+                            out_tangents=[(20, 0), (20, 0), (0, 0)],
+                            position=(12, 18),
+                        )
+                    ],
+                    fill=(0.2, 0.3, 0.8, 1.0),
+                    position=(256, 256),
+                )
+            ],
+        )
+        doc = compile_rig(rig)
+        assert_valid_lottie(doc)
+        path = doc["layers"][0]["shapes"][0]["it"][0]
+        assert path["ty"] == "sh"
+        assert path["ks"]["k"]["v"] == [[12.0, 18.0], [52.0, 98.0], [92.0, 18.0]]
+        assert path["ks"]["k"]["o"][0] == [20.0, 0.0]
+
 
 class TestValidate:
     def test_validate_catches_missing_ref(self):
@@ -236,6 +274,52 @@ class TestValidate:
         with pytest.raises(LottieValidationError):
             validate_scene(Scene(duration=30))
 
+    def test_scene_validation_does_not_enforce_art_direction(self):
+        rig = build_example_rig()
+        scene = Scene(width=1080, height=1920, duration=30)
+        scene.place_character(
+            CharacterInstance(rig=rig).place(x=1100, y=150, scale=25)
+        )
+        validate_scene(scene)
+
+    def test_place_character_accepts_inline_placement(self):
+        rig = build_example_rig()
+        scene = Scene(duration=30)
+
+        direct = CharacterInstance(rig=rig)
+        scene.place_character(direct, 320, 640, scale=75, rotation=12)
+        positioned = CharacterInstance(rig=rig)
+        scene.place_character(positioned, position=(720, 960))
+
+        assert direct in scene.characters
+        assert (direct.x, direct.y, direct.scale, direct.rotation) == (320, 640, 75, 12)
+        assert positioned in scene.characters
+        assert (positioned.x, positioned.y, positioned.scale, positioned.rotation) == (
+            720,
+            960,
+            100,
+            0,
+        )
+
+    def test_character_instance_scale_factor_is_normalized(self):
+        rig = build_example_rig()
+        factor = CharacterInstance(rig=rig, scale=0.85)
+        percent = CharacterInstance(rig=rig, scale=85)
+        placed = CharacterInstance(rig=rig).place(100, 200, scale=0.26)
+
+        assert factor.scale == 85
+        assert percent.scale == 85
+        assert placed.scale == 26
+
+    def test_validate_scene_dimensions(self):
+        scene = Scene(width=0, height=1920, duration=30)
+        scene.add_prop(
+            Prop(name="dot", parts=[Part(name="shape", shapes=[Shape()])])
+        )
+        with pytest.raises(LottieValidationError) as ei:
+            validate_scene(scene)
+        assert any("width and height" in e for e in ei.value.errors)
+
     def test_validate_offcanvas_root_part(self):
         from baasha_pipeline.lottie_sdk.model import Part, Pose, Shape, ShapeKind
 
@@ -261,7 +345,7 @@ class TestValidate:
 
 
 class TestPlaybook:
-    """Anti-drift: every real gate/validator error must match the fix skill."""
+    """Every remaining structural validator error must map to a repair hint."""
 
     @staticmethod
     def _scene_errors(scene):
@@ -272,26 +356,14 @@ class TestPlaybook:
     def test_real_scene_validator_errors_all_match(self):
         from baasha_pipeline.lottie_sdk.playbook import match_playbook
 
-        rig = build_example_rig()
-
-        bare = Scene(width=1080, height=1920, duration=90)
-        bare.place_character(
-            CharacterInstance(rig=rig).place(x=540, y=1400, scale=160)
-        )  # no bg, no props, no play -> 3 structural errors
-
-        tiny = Scene(width=1080, height=1920, duration=90, background=(0.5, 0.7, 0.9, 1.0))
-        tiny.place_character(CharacterInstance(rig=rig).place(x=540, y=300, scale=50))
-
-        huge = Scene(width=1080, height=1920, duration=90, background=(0.5, 0.7, 0.9, 1.0))
-        huge.place_character(CharacterInstance(rig=rig).place(x=540, y=1400, scale=300))
-
         empty = Scene(width=1080, height=1920, duration=0)
+        empty.add_prop(
+            Prop(name="dot", parts=[Part(name="shape", shapes=[Shape()])])
+        )
 
-        collected = []
-        for sc in (bare, tiny, huge, empty):
-            collected.extend(self._scene_errors(sc))
-        assert collected, "expected validator errors from the violating scenes"
-        for err in collected:
+        errors = self._scene_errors(empty)
+        assert errors, "expected invalid duration to fail structural validation"
+        for err in errors:
             block = match_playbook([err])
             assert block, f"playbook does not match live validator error: {err!r}"
 
@@ -330,7 +402,7 @@ class TestPlaybook:
     def test_prompt_assembly_appends_guide_only_on_match(self):
         from baasha_pipeline.lottie_assets import _errors_block
 
-        base = "character Maya too small: occupies 32% of frame height"
+        base = "scene fps must be > 0"
         out = _errors_block([base])
         assert out.startswith(base)
         assert "KNOWN ISSUES - APPLY THIS QUICK GUIDE" in out
@@ -343,10 +415,20 @@ class TestScaleConvention:
     def test_factor_scale_is_lifted_to_percent(self):
         from baasha_pipeline.lottie_sdk.compiler import _norm_scale_pct
 
+        assert _norm_scale_pct(1.0) == [100.0, 100.0]
+        assert _norm_scale_pct(100.0) == [100.0, 100.0]
         assert _norm_scale_pct([1.0, 1.0]) == [100.0, 100.0]
         assert _norm_scale_pct([1.5, 1.5]) == [150.0, 150.0]
         assert _norm_scale_pct([100.0, 100.0]) == [100.0, 100.0]
         assert _norm_scale_pct([150.0, 60.0]) == [150.0, 60.0]
+
+    def test_scalar_pose_scale_compiles_as_uniform_scale(self):
+        rig = build_example_rig().model_copy(deep=True)
+        rig.poses.append(Pose(name="uniform_scale", joints={"torso": {"scale": 100}}))
+
+        doc = compile_rig(rig, pose="uniform_scale")
+        torso = next(layer for layer in doc["layers"] if layer.get("nm") == "torso")
+        assert torso["ks"]["s"]["k"] == [100.0, 100.0, 100.0]
 
     def test_compiled_rig_renders_factor_scale_rig(self):
         from baasha_pipeline.lottie_sdk.author import exec_rig_source, gate_rig_g0

@@ -5,7 +5,7 @@ Deterministic: same models in → same JSON out. LLMs never touch this module.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from .model import (
     CharacterInstance,
@@ -81,6 +81,29 @@ def _compile_shape(shape: Shape) -> Dict[str, Any]:
             "p": _static(_xy(shape.position)),
             "s": _static(_xy(shape.size)),
         }
+    if shape.kind == ShapeKind.PATH:
+        in_tangents = shape.in_tangents or [(0.0, 0.0)] * len(shape.vertices)
+        out_tangents = shape.out_tangents or [(0.0, 0.0)] * len(shape.vertices)
+        return {
+            "ty": "sh",
+            "nm": "path",
+            "d": 1,
+            "ks": {
+                "a": 0,
+                "k": {
+                    "i": [_xy(point) for point in in_tangents],
+                    "o": [_xy(point) for point in out_tangents],
+                    "v": [
+                        [
+                            float(point[0]) + float(shape.position[0]),
+                            float(point[1]) + float(shape.position[1]),
+                        ]
+                        for point in shape.vertices
+                    ],
+                    "c": shape.closed,
+                },
+            },
+        }
     return {
         "ty": "rc",
         "nm": "rect",
@@ -125,14 +148,17 @@ def _compile_part_group(part: Part) -> Dict[str, Any]:
     return {"ty": "gr", "nm": part.name, "it": items}
 
 
-def _norm_scale_pct(s: Sequence[float]) -> List[float]:
+def _norm_scale_pct(s: Union[Number, Sequence[float]]) -> List[float]:
     """Normalize author scale values to Lottie percent (100 = unchanged).
 
     Authors mix conventions: some write percent (100.0 = identity), others
     write factors (1.0 = identity). Values <= 8 in both axes can only be a
     factor (an 8% scale would be an odd authoring choice), so lift them.
     """
-    a, b = float(s[0]), float(s[1])
+    if isinstance(s, (int, float)):
+        a = b = float(s)
+    else:
+        a, b = float(s[0]), float(s[1])
     if a <= 8.0 and b <= 8.0:
         a, b = a * 100.0, b * 100.0
     return [a, b]

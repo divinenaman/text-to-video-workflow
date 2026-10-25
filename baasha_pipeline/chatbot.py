@@ -405,6 +405,9 @@ class ChatInterface:
         ("free-models-per-day", 3600),
         ("neurons", 3600),
         ("daily free", 3600),
+        ("you exceeded your current quota", 3600),
+        ("quota exceeded for metric", 3600),
+        ("rate limit exceeded", 60),
         ("resource has been exhausted", 60),
     )
 

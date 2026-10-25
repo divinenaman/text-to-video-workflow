@@ -45,6 +45,10 @@ def validate_scene(scene: Scene) -> None:
     errors: List[str] = []
     if scene.duration <= 0:
         errors.append("scene duration must be > 0")
+    if scene.width <= 0 or scene.height <= 0:
+        errors.append("scene width and height must be > 0")
+    if scene.fps <= 0:
+        errors.append("scene fps must be > 0")
     if not scene.characters and not scene.props:
         errors.append("scene is empty (no characters or props)")
     for inst in scene.characters:
@@ -52,85 +56,6 @@ def validate_scene(scene: Scene) -> None:
             validate_rig(inst.rig)
         except LottieValidationError as e:
             errors.extend(f"character {inst.rig.name}: {err}" for err in e.errors)
-
-    w, h = float(scene.width), float(scene.height)
-
-    # Layered background: a base sky/wall color is mandatory; a lone flat
-    # color with nothing on top of it reads as placeholder art.
-    if scene.background is None:
-        errors.append(
-            "background is missing - set background=(r,g,b,a) on the Scene to a "
-            "sky/wall base color (part of a layered background, never left out)"
-        )
-
-    # Set dressing: ground plane + at least one story prop.
-    if len(scene.props) < 2:
-        errors.append(
-            f"set dressing: only {len(scene.props)} prop(s) placed - need at least 2 "
-            "via scene.add_prop(...): (a) a full-width ground/floor rect covering the "
-            "bottom ~20% of the canvas (width >= ~0.6 * canvas width, e.g. "
-            "width=1080, height=420, positioned so it spans the bottom edge) and "
-            "(b) at least one story prop from the panel description (shed, soil hole, "
-            "flower, packet, tool...). A flat single-color background is not a scene."
-        )
-
-    # Motion: at least one character must actually play a clip.
-    if scene.characters and not any(inst.clip for inst in scene.characters):
-        playable = [
-            f"{inst.rig.name}: {[c.name for c in inst.rig.clips]}"
-            for inst in scene.characters
-            if inst.rig.clips
-        ]
-        if playable:
-            errors.append(
-                "no motion - the scene is static. Call inst.play(\"<clip>\") on at "
-                "least one character instance before scene.place_character(inst). "
-                f"Available clips: {'; '.join(playable)}"
-            )
-
-    # Placement / scale: characters must read at 35-75% of frame height and be
-    # fully in frame (center-based placement, anchor = rig center).
-    for inst in scene.characters:
-        rig = inst.rig
-        name = rig.name
-        scale = abs(float(inst.scale)) or 100.0
-        eff_h = rig.height * scale / 100.0
-        eff_w = rig.width * scale / 100.0
-        frac = eff_h / h if h else 0.0
-        if frac < 0.35:
-            target = int(round(0.5 * h / max(rig.height, 1) * 100))
-            errors.append(
-                f"character {name} too small: occupies {frac:.0%} of frame height "
-                f"(needs 35-75%) - place at scale ~{target} (currently {inst.scale:.0f})"
-            )
-        elif frac > 1.15:
-            target = int(round(0.6 * h / max(rig.height, 1) * 100))
-            errors.append(
-                f"character {name} too large: occupies {frac:.0%} of frame height "
-                f"(needs 35-75%) - place at scale ~{target} (currently {inst.scale:.0f})"
-            )
-        left, right = inst.x - eff_w / 2.0, inst.x + eff_w / 2.0
-        top, bottom = inst.y - eff_h / 2.0, inst.y + eff_h / 2.0
-        if right < -0.03 * w or left > 1.03 * w:
-            errors.append(
-                f"character {name} is off-canvas horizontally (x={inst.x:.0f}; canvas "
-                f"width {w:.0f}) - place it inside the frame"
-            )
-        elif left < -0.03 * w or right > 1.03 * w:
-            errors.append(
-                f"character {name} is cropped horizontally (spans {left:.0f}..{right:.0f} "
-                f"of {w:.0f}) - recentre or reduce scale"
-            )
-        if top < -0.04 * h or bottom > 1.06 * h:
-            errors.append(
-                f"character {name} is cropped vertically (spans {top:.0f}..{bottom:.0f} "
-                f"of {h:.0f}) - keep the whole body inside the canvas"
-            )
-        if bottom < 0.45 * h:
-            errors.append(
-                f"character {name} floats in the upper frame (feet at {bottom / h:.0%} "
-                "of height) - ground it: move y down so the feet land in the lower half"
-            )
 
     if errors:
         raise LottieValidationError(errors)
@@ -184,10 +109,32 @@ def _check_shapes(shapes: Any, path: str, errors: List[str]) -> None:
             errors.append(f"{path}: group {gi} has no items")
             continue
         kinds = [it.get("ty") for it in items if isinstance(it, dict)]
-        if not any(k in ("el", "rc") for k in kinds):
+        if not any(k in ("el", "rc", "sh") for k in kinds):
             errors.append(f"{path}: group {gi} has no drawable shape")
         if "fl" not in kinds and "st" not in kinds:
             errors.append(f"{path}: group {gi} has no fill/stroke")
+        for si, shape in enumerate(items):
+            if not isinstance(shape, dict) or shape.get("ty") != "sh":
+                continue
+            shape_path = f"{path}.shapes[{gi}].it[{si}]"
+            keyframes = shape.get("ks", {}).get("k")
+            if not isinstance(keyframes, dict):
+                errors.append(f"{shape_path}: path data missing")
+                continue
+            vertices = keyframes.get("v")
+            in_tangents = keyframes.get("i")
+            out_tangents = keyframes.get("o")
+            if not isinstance(vertices, list) or len(vertices) < 2:
+                errors.append(f"{shape_path}: path needs at least 2 vertices")
+            elif (
+                not isinstance(in_tangents, list)
+                or not isinstance(out_tangents, list)
+                or len(in_tangents) != len(vertices)
+                or len(out_tangents) != len(vertices)
+            ):
+                errors.append(
+                    f"{shape_path}: path vertices and tangents must have equal lengths"
+                )
 
 
 def validate_lottie(doc: Dict[str, Any]) -> List[str]:

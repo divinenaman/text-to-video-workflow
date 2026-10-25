@@ -40,7 +40,14 @@ from .prompts.splitters import markdown_parse
 
 PASS_SCORE = 85
 RIG_PASS_SCORE = 75
-MAX_GATE_ITERS = 4
+MAX_GATE_ITERS = 6
+
+_LOTTIE_SYSTEM_PROMPT = (
+    "You are a Lottie vector-graphics art director, illustrator, animator, and "
+    "technical author. Follow the task and visual direction in the user's "
+    "prompt; do not impose social-media, viral-video, or other unrelated "
+    "framing. Follow the requested output format exactly."
+)
 
 
 def _errors_block(errors: List[str]) -> str:
@@ -95,7 +102,9 @@ def _ask(chatbot, payload, attempts: int = 3, text_degrade: bool = True) -> str:
     degraded = False
     for i in range(attempts):
         try:
-            out = chatbot.fetch_text(payload)
+            out = chatbot.fetch_text(
+                payload, system_prompt=_LOTTIE_SYSTEM_PROMPT
+            )
             if out and str(out).strip():
                 # attribution aid: which shape did the provider actually return
                 logging.info(
@@ -331,21 +340,17 @@ def author_character_rig(
             ]
             last_gate = "G1"
             last_sheet = sheet_png
-            source = _ask(chatbot, 
-                [
-                    Img(
-                        _bytes=sheet_png,
-                        text=fix_prompt_tpl.format(
-                            NAME=char_name,
-                            DESCRIPTION=description,
-                            SOURCE=source,
-                            GATE="G1-render",
-                            ERRORS=_errors_block(last_errors),
-                            SCREENSHOTS_NOTE="Attached: contact sheet of rendered frames. One or more frames are blank.",
-                            UNCHANGED=unchanged,
-                        ),
-                    )
-                ]
+            source = _ask(
+                chatbot,
+                fix_prompt_tpl.format(
+                    NAME=char_name,
+                    DESCRIPTION=description,
+                    SOURCE=source,
+                    GATE="G1-render",
+                    ERRORS=_errors_block(last_errors),
+                    SCREENSHOTS_NOTE="The render gate reported blank frames; use the measured errors above.",
+                    UNCHANGED=unchanged,
+                ),
             )
             continue
 
@@ -361,21 +366,17 @@ def author_character_rig(
             ]
             last_gate = "G1-crop"
             last_sheet = sheet_png
-            source = _ask(chatbot, 
-                [
-                    Img(
-                        _bytes=sheet_png,
-                        text=fix_prompt_tpl.format(
-                            NAME=char_name,
-                            DESCRIPTION=description,
-                            SOURCE=source,
-                            GATE="G1-render",
-                            ERRORS=_errors_block(last_errors),
-                            SCREENSHOTS_NOTE=f"Attached: contact sheet of rendered frames. The {cropped} edge crops the character.",
-                            UNCHANGED=unchanged,
-                        ),
-                    )
-                ]
+            source = _ask(
+                chatbot,
+                fix_prompt_tpl.format(
+                    NAME=char_name,
+                    DESCRIPTION=description,
+                    SOURCE=source,
+                    GATE="G1-render",
+                    ERRORS=_errors_block(last_errors),
+                    SCREENSHOTS_NOTE=f"The render gate measured this crop: {cropped}",
+                    UNCHANGED=unchanged,
+                ),
             )
             continue
 
@@ -389,14 +390,12 @@ def author_character_rig(
             )
             last_report = report
             if report is None:
-                # Fail CLOSED: without vision judging an authored rig is far
-                # likelier to be anatomically broken (detached parts, scatter)
-                # than acceptable - accept nothing unjudged. Loop exhausts to
-                # the template fallback if judges stay dead.
+                # No visual source changed, so retrying an unavailable judge
+                # would render and submit the same rig again.
                 last_gate = "G2-vision-unavailable"
                 last_errors = ["vision judge unavailable (all judge providers failed)"]
                 logging.error(f"vision judge unavailable ({char_name}) - gate fails closed")
-                continue
+                break
             if report and not report.get("pass", False) and (
                 int(report.get("consistency_score", 0)) < RIG_PASS_SCORE
                 or any(
@@ -409,21 +408,17 @@ def author_character_rig(
                 directives = "\n".join(
                     f"- {i.get('fix_directive', i.get('issue', ''))}" for i in issues
                 )
-                source = _ask(chatbot, 
-                    [
-                        Img(
-                            _bytes=sheet_png,
-                            text=fix_prompt_tpl.format(
-                                NAME=char_name,
-                                DESCRIPTION=description,
-                                SOURCE=source,
-                                GATE="G2-vision",
-                                ERRORS=_errors_block([f"score={report.get('consistency_score')}", directives]),
-                                SCREENSHOTS_NOTE="Attached: current contact sheet.",
-                                UNCHANGED=unchanged,
-                            ),
-                        )
-                    ]
+                source = _ask(
+                    chatbot,
+                    fix_prompt_tpl.format(
+                        NAME=char_name,
+                        DESCRIPTION=description,
+                        SOURCE=source,
+                        GATE="G2-vision",
+                        ERRORS=_errors_block([f"score={report.get('consistency_score')}", directives]),
+                        SCREENSHOTS_NOTE="The vision judge reviewed the rendered contact sheet; use its textual directives above.",
+                        UNCHANGED=unchanged,
+                    ),
                 )
                 continue
 
@@ -446,8 +441,7 @@ def author_character_rig(
     logging.error(
         f"character rig failed all gates: {char_name} gate={last_gate} errors={last_errors}"
     )
-    # Archive the last attempted (failed) authoring so blank-frame/truncation
-    # failures can be diagnosed offline - source.py holds the fallback after this.
+    # Archive the last attempted source for diagnosing authoring failures.
     try:
         object_storage.upload_data(
             object_storage.ASSETS_VIDEO_CONFIG,
@@ -457,65 +451,6 @@ def author_character_rig(
         )
     except Exception as e:
         logging.warning(f"could not archive failed rig source for {char_name}: {e}")
-    # Graceful degradation: substitute a known-good template rig (renamed to
-    # this character) so scenes can still instantiate the character instead of
-    # silently dropping them from the video.
-    try:
-        from .lottie_sdk import build_example_rig
-
-        base = build_example_rig().model_dump(mode="json")
-        # Differentiate template palettes so fallback characters are not clones.
-        desc_l = (description or "").lower()
-        if any(
-            w in desc_l
-            for w in ("robot", "android", "mecha", "machine", "chassis", "metal")
-        ):
-            palette = {
-                "torso": (0.34, 0.40, 0.47, 1.0),
-                "left_arm": (0.34, 0.40, 0.47, 1.0),
-                "right_arm": (0.34, 0.40, 0.47, 1.0),
-                "left_leg": (0.24, 0.27, 0.30, 1.0),
-                "right_leg": (0.24, 0.27, 0.30, 1.0),
-                "head": (0.68, 0.72, 0.76, 1.0),
-                "hair": (0.12, 0.14, 0.16, 1.0),
-            }
-            for p in base.get("parts", []):
-                if p.get("name") in palette:
-                    p["fill"] = list(palette[p["name"]])
-        # Bake the real character name in so rehydration/api_summary match the
-        # CHARACTERS dict key used by scene composition.
-        base["name"] = char_name
-        source = (
-            "# baasha fallback template rig (LLM authoring failed; substituted)\n"
-            "rig = CharacterRig(**" + repr(base) + ")\n"
-        )
-        rig = exec_rig_source(source)
-        doc = gate_rig_g0(rig)
-        with LottieBrowserManager() as bm:
-            frames = render_keyframes(doc, n=3, browser=bm)
-            sheet = render_contact_sheet(
-                doc, frames=[f for f, _ in frames], browser=bm
-            )
-            sheet_png = _sheet_bytes(sheet)
-        urls = _upload_triple(outdir, slugify(char_name), source, doc, sheet_png)
-        logging.warning(
-            f"character rig fallback template used for {char_name} "
-            f"(original gate={last_gate}) urls={urls}"
-        )
-        return {
-            "name": char_name,
-            "description": description,
-            "url": urls["preview_url"],
-            "lottie_url": urls["lottie_url"],
-            "lottie_source_url": urls["source_url"],
-            "complexity": complexity,
-            "image_engine": "lottie",
-            "lottie_fallback": True,
-            "lottie_error": {"gate": last_gate, "errors": last_errors},
-        }
-    except Exception as fb_e:
-        logging.error(f"fallback rig failed for {char_name}: {fb_e}")
-
     return {
         "name": char_name,
         "description": description,
@@ -611,12 +546,27 @@ def compose_scene_lottie(
     outdir: str = "lottie/tmp",
     use_vision_judge: bool = True,
     max_iters: int = MAX_GATE_ITERS,
+    existing_scenes: Optional[List[dict]] = None,
 ) -> List[Optional[Dict[str, Any]]]:
     """Compose one scene Lottie per panel description. Returns per-panel entries.
 
     Each entry: {preview_url, lottie_url, source_url, grid-compatible keys}.
     Previews montage into a grid PNG for the existing judge when desired.
     """
+    existing_by_panel = {
+        entry.get("panel_index"): entry
+        for entry in (existing_scenes or [])
+        if isinstance(entry, dict)
+        and isinstance(entry.get("panel_index"), int)
+        and entry.get("lottie_url")
+        and entry.get("url")
+    }
+    if len(existing_by_panel) >= len(panel_descriptions) and all(
+        idx in existing_by_panel for idx in range(len(panel_descriptions))
+    ):
+        logging.info("lottie: reusing all %s previously accepted scenes", len(panel_descriptions))
+        return [existing_by_panel[idx] for idx in range(len(panel_descriptions))]
+
     rigs: Dict[str, CharacterRig] = {}
     api_lines: List[str] = []
     for c in character_list:
@@ -645,6 +595,11 @@ def compose_scene_lottie(
 
     results: List[Optional[Dict[str, Any]]] = []
     for idx, panel in enumerate(panel_descriptions):
+        if idx in existing_by_panel:
+            logging.info("lottie: reusing previously accepted scene %s", idx)
+            results.append(existing_by_panel[idx])
+            continue
+
         source = _ask(chatbot, 
             compose_tpl.format(
                 PANEL_DESCRIPTIONS=panel,
@@ -755,7 +710,7 @@ def compose_scene_lottie(
                     last_gate = "G2-vision-unavailable"
                     last_errors = ["vision judge unavailable (all judge providers failed)"]
                     logging.error(f"vision judge unavailable (scene {idx}) - gate fails closed")
-                    continue
+                    break
                 if report and not report.get("pass", False) and (
                     int(report.get("consistency_score", 0)) < PASS_SCORE
                     or any(
@@ -766,21 +721,33 @@ def compose_scene_lottie(
                     issues = report.get("issues", [])
                     directives = "\n".join(
                         f"- {i.get('fix_directive', i.get('issue', ''))}" for i in issues
+                        if i.get("fix_directive") or i.get("issue")
                     )
-                    source = _ask(chatbot, 
-                        [
-                            Img(
-                                _bytes=sheet_png,
-                                text=fix_tpl.format(
-                                    PANEL_DESCRIPTIONS=panel,
-                                    CHARACTER_API=char_api_text,
-                                    SOURCE=source,
-                                    GATE="G2-vision",
-                                    ERRORS=_errors_block([f"score={report.get('consistency_score')}", directives]),
-                                    SCREENSHOTS_NOTE="Attached contact sheet.",
-                                ),
-                            )
-                        ]
+                    if not directives.strip():
+                        directives = (
+                            "- The judge returned a failing score but no issue details. "
+                            "Compare the rendered scene directly with the panel brief "
+                            "and correct the most visible mismatch; preserve the "
+                            "successful composition and canonical character design. "
+                            f"Judge summary: {report.get('summary') or 'no summary provided'}."
+                        )
+                    logging.warning(
+                        "lottie vision judge rejected scene %s: score=%s summary=%r issues=%r",
+                        idx,
+                        report.get("consistency_score"),
+                        report.get("summary"),
+                        issues,
+                    )
+                    source = _ask(
+                        chatbot,
+                        fix_tpl.format(
+                            PANEL_DESCRIPTIONS=panel,
+                            CHARACTER_API=char_api_text,
+                            SOURCE=source,
+                            GATE="G2-vision",
+                            ERRORS=_errors_block([f"score={report.get('consistency_score')}", directives]),
+                            SCREENSHOTS_NOTE="The vision judge reviewed the contact sheet; use its textual directives above.",
+                        ),
                     )
                     continue
 
@@ -808,47 +775,15 @@ def compose_scene_lottie(
                 )
             except Exception as e:
                 logging.warning(f"could not archive failed scene source {idx}: {e}")
-            # Try to build a clean fallback scene using available rigs or example scene
-            try:
-                from .lottie_sdk import build_example_scene, CharacterInstance
-                fb_scene = build_example_scene()
-                if rigs:
-                    # Place the first available character
-                    first_name, first_rig = next(iter(rigs.items()))
-                    inst = CharacterInstance(rig=first_rig).place(width // 2, int(height * 0.65), scale=180.0)
-                    clip_name = first_rig.clips[0].name if first_rig.clips else None
-                    if clip_name:
-                        inst.play(clip_name)
-                    fb_scene.characters = [inst]
-                fb_source = "# fallback scene\n"
-                doc = gate_scene_g0(fb_scene)
-                with LottieBrowserManager() as bm:
-                    frames = render_keyframes(doc, n=3, browser=bm)
-                    sheet = render_contact_sheet(
-                        doc, frames=[f for f, _ in frames], browser=bm
-                    )
-                    sheet_png = _sheet_bytes(sheet)
-                urls = _upload_triple(outdir, f"scene_{idx}", fb_source, doc, sheet_png)
-                entry = {
-                    "panel_index": idx,
-                    "url": urls["preview_url"],
-                    "lottie_url": urls["lottie_url"],
-                    "lottie_source_url": urls["source_url"],
-                    "image_engine": "lottie",
-                    "lottie_fallback": True,
-                    "lottie_error": {"gate": last_gate, "errors": last_errors},
-                }
-                logging.warning(f"scene {idx} fallback used: {urls}")
-            except Exception as fb_err:
-                logging.error(f"scene {idx} fallback failed: {fb_err}")
-                entry = {
-                    "panel_index": idx,
-                    "url": None,
-                    "lottie_url": None,
-                    "lottie_source_url": None,
-                    "image_engine": "lottie",
-                    "lottie_error": {"gate": last_gate, "errors": last_errors},
-                }
+            entry = {
+                "panel_index": idx,
+                "url": None,
+                "lottie_url": None,
+                "lottie_source_url": None,
+                "image_engine": "lottie",
+                "lottie_error": {"gate": last_gate, "errors": last_errors},
+                "lottie_source_last": source[-12000:] if source else None,
+            }
         results.append(entry)
 
     return results
