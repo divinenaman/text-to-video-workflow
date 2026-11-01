@@ -158,6 +158,12 @@ draft_parser.add_argument(
 )
 draft_parser.add_argument("gen_video", type=bool, required=False, help="Generate Video")
 draft_parser.add_argument(
+    "duration",
+    type=float,
+    required=False,
+    help="Target total runtime of the draft screenplay in seconds",
+)
+draft_parser.add_argument(
     "character_ref", type=dict, required=False, help="Image to be used as Reference!"
 )
 draft_parser.add_argument(

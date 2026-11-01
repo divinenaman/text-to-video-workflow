@@ -4,9 +4,27 @@ from .configs import app_config
 from uuid import uuid4
 import os
 from functools import lru_cache
+from urllib.parse import urlparse
+import requests
 from .logger import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+
+
+def get_public_asset_url(url):
+    """
+    Providers fetch ref URLs server-side, so local-object-storage URLs
+    (localhost/s3mock) are unreachable to them. Re-host such assets on
+    fal's managed storage and return the public URL.
+    """
+    host = urlparse(url).hostname or ""
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return url
+
+    data = requests.get(url, timeout=60).content
+    public_url = fal.upload(data, "image/png")
+    logging.info(f"rehosted local ref {url} -> {public_url}")
+    return public_url
 
 
 @lru_cache(maxsize=None)
@@ -28,7 +46,7 @@ def image_to_video(prompt, image_url, upload=False):
         "fal-ai/bytedance/seedance/v1/lite/image-to-video",
         arguments={
             "prompt": prompt,
-            "image_url": image_url,
+            "image_url": get_public_asset_url(image_url),
             "aspect_ratio": "9:16",
             "resolution": "480p",
             "duration": "3",
@@ -108,9 +126,9 @@ def generate_video(
         end_img_key = "end_image_url"
 
     if ref:
-        arguments[start_img_key] = ref
+        arguments[start_img_key] = get_public_asset_url(ref)
     if last_ref:
-        arguments[end_img_key] = last_ref
+        arguments[end_img_key] = get_public_asset_url(last_ref)
 
     logging.info(f"Starting Fal video generation with arguments: {arguments}")
 
@@ -197,15 +215,20 @@ def generate_image(
             )
 
             if ref_url:
+                url = get_public_asset_url(ref_url)
                 if ref_type == "mask":
-                    mask_image_url = ref_url
+                    mask_image_url = url
                 else:
-                    image_urls.append(ref_url)
+                    image_urls.append(url)
 
                     name = ref.get("name") if isinstance(ref, dict) else None
 
                     if ref_type == "style":
-                        desp = "Style Reference, do not recreate the background, people, things and recreate just the style"
+                        desp = (
+                            "Style Reference: DO NOT recreate any person, face, character, "
+                            "figure, or object depicted in this image; copy ONLY its aesthetic "
+                            "(color grading, lighting, texture, rendering style)"
+                        )
                     elif ref_type == "scene":
                         desp = "Scene Reference"
                     else:

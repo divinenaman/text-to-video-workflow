@@ -799,6 +799,36 @@ class DraftResource(Resource):
             if video_data.get("story_context"):
                 chatbot.set_global_ctx(video_data.get("story_context"))
 
+            if args.style_reference_urls:
+                # Style-ref pre-processing: if the user's refs depict characters,
+                # swap them for a faceless style card (cached in video_data).
+                if video_data.get("style_card_url"):
+                    args.style_reference_urls = [video_data["style_card_url"]]
+                else:
+                    from processor import synthesize_faceless_style_card
+
+                    style_card = synthesize_faceless_style_card(
+                        chatbot,
+                        args.style_reference_urls,
+                        image_config={"name": image_engine, "aspect_ratio": "1:1"},
+                        out_dir=local_cache,
+                        style_terms=(
+                            global_image_styles.to_text()
+                            if global_image_styles
+                            else None
+                        ),
+                    )
+                    if style_card:
+                        video_data.setdefault(
+                            "original_style_reference_urls", args.style_reference_urls
+                        )
+                        video_data["style_card_url"] = style_card
+                        args.style_reference_urls = [style_card]
+                        draft.style_reference_urls = [style_card]
+                        draft.video_data = json.dumps(video_data)
+                        db_session.commit()
+                        patch_log(f"style card active: {style_card}")
+
             if args.self_heal:
 
                 image_gen_errors = video_data.get("image_gen_errors", {})
@@ -852,6 +882,7 @@ class DraftResource(Resource):
                     image_styles=global_image_styles,
                     character_names=character_names if character_names else None,
                     style_refs=draft.style_reference_urls,
+                    target_duration=args.duration,
                 )
 
                 video_data["text"] = story
@@ -1272,7 +1303,13 @@ class DraftResource(Resource):
                                 }
                             )
 
-                        grid_guidance = " create a single frame only"
+                        grid_guidance = (
+                            " Generate ONE single frame only, rendered as a standalone "
+                            "vertically-oriented 9:16 cinematic panel. It must be stylistically "
+                            "IDENTICAL to the reference grid panels — same visual medium, palette, "
+                            "color grading, lighting and rendering quality — and must read as the "
+                            "next frame of the same film."
+                        )
 
                         res, err = create_image_grid(
                             chunk_prompts,
@@ -1314,12 +1351,19 @@ class DraftResource(Resource):
                             f"or synthetic textures that are not present in the crop. "
                             f"Preserve the original atmospheric mood and organic rendering quality of the reference crop completely."
                         )
-                        upscale_prompts = [enhance_prompt] * len(regen_images)
+                        # Only upscale successfully regenerated images; index
+                        # alignment between prompts and ref urls must be kept
+                        # 1:1 with the crops being upscaled (no `if img`
+                        # compression), and write-back must use the original
+                        # regen slot so a failed crop cannot shift results.
+                        upscale_targets = [
+                            (i, img) for i, img in enumerate(regen_images) if img
+                        ]
+                        upscale_prompts = [enhance_prompt] * len(upscale_targets)
                         upscale_ref_urls = [
                             [{"url": img, "type": "subject", "name": f"crop-{i}"}]
                             + style_refs_for_grid
-                            for i, img in enumerate(regen_images)
-                            if img
+                            for i, img in upscale_targets
                         ]
 
                         if upscale_ref_urls:
@@ -1336,9 +1380,9 @@ class DraftResource(Resource):
                                 chatbot_bbox,
                             )
                             patch_original_crops = list(regen_images)
-                            for i, img in enumerate(upscaled_images):
-                                if img:
-                                    regen_images[i] = img
+                            for pos, (i, _) in enumerate(upscale_targets):
+                                if pos < len(upscaled_images) and upscaled_images[pos]:
+                                    regen_images[i] = upscaled_images[pos]
 
                     image_engine_map = {}
                 else:
@@ -2530,6 +2574,31 @@ class DraftResource(Resource):
                         # Override any existing text-based image_styles when a definitive style_ref is present
                         image_styles = to_style_data({"themes": [style_desc]})
 
+                # Style-ref pre-processing: if the user's refs depict characters,
+                # synthesize a faceless palette/texture card from them once and use
+                # ONLY the card downstream (portraits, grids, upscales, patches).
+                # Cached in video_data so later stage re-runs reuse it.
+                if style_ref_urls and not video_data.get("style_card_url"):
+                    from processor import synthesize_faceless_style_card
+
+                    style_card = synthesize_faceless_style_card(
+                        chatbot,
+                        style_ref_urls,
+                        image_config=image_config,
+                        out_dir=local_cache,
+                        style_terms=style_desc,
+                    )
+                    if style_card:
+                        if "original_style_reference_urls" not in video_data:
+                            video_data["original_style_reference_urls"] = style_ref_urls
+                        video_data["style_card_url"] = style_card
+                        target_draft.style_reference_urls = [style_card]
+                        target_draft.video_data = json.dumps(video_data)
+                        db_session.commit()
+                        logging.info(
+                            f"style card active for this draft: {style_card}"
+                        )
+
                 title = target_draft.title
 
                 story_raw = target_draft.story
@@ -2622,6 +2691,7 @@ class DraftResource(Resource):
                             else None,
                             style_refs=target_draft.style_reference_urls,
                             prompt_overrides=prompt_overrides,
+                            target_duration=data.duration,
                         )
                         video_data["cinematic"] = cinematic_data
 
@@ -2799,7 +2869,7 @@ class DraftResource(Resource):
                             {
                                 "url": s,
                                 "type": "style",
-                                "name": f"reference for style, aesthetic, color palette, texture only.{style_str}",
+                                "name": f"reference for aesthetic ONLY: color palette, color grading, lighting and texture. This reference may itself depict a person or character — that subject, its face and its figure MUST NOT appear in any panel.{style_str}",
                             }
                             for s in style_urls
                         ]
@@ -2874,7 +2944,13 @@ class DraftResource(Resource):
                         if chunk_size == 4:
                             grid_guidance += " Arrange the image as a strict 2x2 grid where each of the four panels is a vertically-oriented 9:16 frame, separated by thin black border"
                         elif chunk_size == 1:
-                            grid_guidance += " create a single frame only"
+                            grid_guidance += (
+                                " Generate ONE single frame only, rendered as a standalone "
+                                "vertically-oriented 9:16 cinematic panel. It must be stylistically "
+                                "IDENTICAL to the preceding panels — same visual medium, palette, "
+                                "color grading, lighting and rendering quality — and must continue "
+                                "the sequence directly as the next frame of the same film."
+                            )
 
                         retries = 2
                         retry_count = 0
@@ -3098,6 +3174,8 @@ class DraftResource(Resource):
                                     "name": image_engine,
                                     "width": image_config.get("width"),
                                     "height": image_config.get("height"),
+                                    # Preserve the draft's intended aspect ratio during upscale
+                                    "aspect_ratio": image_config.get("aspect_ratio", "9:16"),
                                 },
                                 chatbot_bbox,
                             )
@@ -4612,6 +4690,48 @@ def api_judge_grid():
     )
 
     return jsonify(report)
+
+
+@app.route("/upload/style_ref", methods=["POST"])
+def upload_style_ref():
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"message": "multipart form field 'file' is required"}), 400
+
+    allowed_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
+    _, ext = os.path.splitext(uploaded.filename)
+    ext = (ext or "").lower()
+    if ext not in allowed_exts:
+        return (
+            jsonify(
+                {
+                    "message": f"unsupported style ref format '{ext or '(none)'}'; allowed: {sorted(allowed_exts)}"
+                }
+            ),
+            400,
+        )
+
+    from PIL import Image, UnidentifiedImageError
+
+    os.makedirs("tmp/style_refs", exist_ok=True)
+    local_path = os.path.join("tmp", "style_refs", f"{uuid.uuid4()}{ext}")
+    uploaded.save(local_path)
+
+    # Reject files that are not real, decodable images (extension alone lies)
+    try:
+        Image.open(local_path).verify()
+    except (UnidentifiedImageError, Exception) as e:
+        os.remove(local_path)
+        return (
+            jsonify({"message": f"file is not a valid image: {type(e).__name__}"}),
+            400,
+        )
+
+    logging.info(f"style ref uploaded: {uploaded.filename} -> {local_path}")
+    public_url = upload_image(local_path)
+    os.remove(local_path)
+
+    return jsonify({"url": public_url})
 
 
 @app.route("/api/refine_grid", methods=["POST"])

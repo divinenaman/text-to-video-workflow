@@ -826,7 +826,8 @@ def find_story_characters(
         prompt += (
             f"\n\nCRITICAL SPEAKER & CHARACTER EXPECTANCY:\n"
             f"The screenplay generator has already identified and referred to the following character names in the screenplay: {char_list_str}.\n"
-            f"You MUST generate a visual casting profile and voice description for EXACTLY these characters. Do not invent new names or ignore these. Ensure they match exactly."
+            f"You MUST generate a visual casting profile and voice description for every individual person in that list. Do not invent new names or ignore these. Ensure they match exactly.\n"
+            f"But if a listed name combines multiple characters (e.g. 'Ram and Sita') or a collective (e.g. 'the Vanara Army'), you MUST NOT produce a combined entry: emit one separate entry per named individual, and skip collectives entirely."
         )
 
     image_prompt_spec = get_image_prompt_spec(is_styled=bool(style_refs)) or ""
@@ -838,7 +839,6 @@ def find_story_characters(
                 "json_keys": [
                     "name",
                     "description",
-                    "fictional",
                     "search",
                     "voice_description",
                 ],
@@ -910,8 +910,7 @@ def find_story_characters(
             {
                 "name": n,
                 "description": f"character in the story: {n}",
-                "fictional": True,
-                "search": n,
+                "search": "",
                 "voice_description": "",
             }
             for n in names[:4]
@@ -982,7 +981,12 @@ def generate_character_bible(
             {
                 "url": s,
                 "type": "style",
-                "name": "COMPLETELY IGNORE any faces, identities, or characters in this image. Use it EXCLUSIVELY for lighting, color grading, and texture only.",
+                "name": (
+                    "CRITICAL: This style reference may itself depict a person or "
+                    "character. That depicted subject, its face, and its figure MUST "
+                    "NOT appear anywhere in the generated portrait. Use the reference "
+                    "EXCLUSIVELY for lighting, color grading, and texture."
+                ),
             }
             for s in style_reference_urls
         ]
@@ -1077,11 +1081,18 @@ def generate_character_bible(
         if char.get("url"):
             continue
 
-        # 2. Extract real-world search tasks
-        search_query = char.get("search")
-        is_fictional = str(char.get("fictional", "true")).lower() == "true"
+        # 2. Extract real-world search tasks. The presence of a non-empty
+        # 'search' query IS the switch: a query means img2img anchor casting
+        # (real person or canonical mythological depiction); an empty query
+        # means the model invents the character from the description alone.
+        search_query = (str(char.get("search") or "").strip() or "").strip()
+        if search_query.lower() in ("none", "null", "no", "n/a", "false"):
+            search_query = ""
+        if re.search(r'[",\[\]{}]', search_query):
+            # regex-splitter shrapnel - an unparseable value means no anchor
+            search_query = ""
 
-        if search_query and not is_fictional:
+        if search_query:
             search_tasks[i] = search_query
 
     # Execute searches in parallel
@@ -1138,13 +1149,23 @@ def generate_character_bible(
                     )
                     clean_desc = desc.split("SINGLE FRAME ONLY.")[0].strip()
 
+                    if str(char.get("fictional", "true")).lower() == "true":
+                        identity_instruction = (
+                            "1. Use the face structure, ethnic features, complexion, and physical build of the person in the character reference image ONLY as a lookalike anchor approximating the subject's identity - do not copy any clothing, styling or modern props from that reference.\n"
+                            "2. Wherever the Subject Description specifies attire, ornaments, hairstyle or age, the Subject Description WINS - repaint the subject to match it exactly.\n"
+                        )
+                    else:
+                        identity_instruction = (
+                            "1. Extract the exact face structure, physical features, and build from the character reference image to maintain absolute identity consistency.\n"
+                            "2. Apply the visual medium, art style, rendering texture, and aesthetic of the provided style reference image perfectly onto the subject.\n"
+                        )
+
                     upscale = (
                         f"HIGH FIDELITY STYLE TRANSFER & REGENERATION PORTRAIT.\n"
                         f"Subject Description: {clean_desc}\n\n"
                         f"INSTRUCTIONS:\n"
-                        f"1. Extract the exact face structure, physical features, and build from the character reference image to maintain absolute identity consistency.\n"
-                        f"2. Apply the visual medium, art style, rendering texture, and aesthetic of the provided style reference image perfectly onto the subject.\n"
-                        f"3. Output a clean, high-quality, single-subject full frame portrait. No grids, no comic dividers, no split screens."
+                        f"{identity_instruction}"
+                        f"3. Output a clean, high-quality, straight, front-facing, head-and-shoulders portrait: subject centered, looking directly at the viewer, neutral calm expression, plain uncluttered background, even soft lighting, full visible detail of face, hairstyle, garments and ornaments. No action pose, no environment, no grids, no comic dividers, no split screens."
                     )
                     prompts_to_gen.append(upscale)
                     char_indices.append(i)
@@ -1153,7 +1174,20 @@ def generate_character_bible(
 
         desc = char.get("description")
         if desc:
-            prompts_to_gen.append(desc)
+            portrait_framing = (
+                "Straight, front-facing, head-and-shoulders portrait: subject "
+                "centered, looking directly at the viewer, neutral calm "
+                "expression, plain uncluttered background, even soft lighting, "
+                "full visible detail of face, hairstyle, garments and ornaments. "
+                "No action pose, no environment, no other figures in frame."
+            )
+            core, sep, tail = desc.partition("SINGLE FRAME ONLY.")
+            if sep:
+                prompts_to_gen.append(
+                    core.strip() + ". " + portrait_framing + " SINGLE FRAME ONLY." + tail
+                )
+            else:
+                prompts_to_gen.append(f"{desc} {portrait_framing}")
             char_indices.append(i)
 
     if prompts_to_gen:
@@ -1699,13 +1733,33 @@ def get_prompt_character_ref_urls(
                 # if is_url false then its the index of chracter_list
                 character = character_list[match_data]
                 desp = character["description"]
-                fictional = character.get("fictional", False)
-                search = character.get("search", ch)
 
                 # gen
                 urls = []
 
-                if search and (not fictional or fictional == "false"):
+                new_contract = (
+                    "search" in character and "fictional" not in character
+                )
+                if new_contract:
+                    # A non-empty search query IS the anchor switch (replaces
+                    # the old fictional flag): query => img2img anchor casting,
+                    # empty => invent the character from the description.
+                    search = (str(character.get("search") or "").strip() or "").strip()
+                    if search.lower() in ("none", "null", "no", "n/a", "false"):
+                        search = ""
+                    if re.search(r'[",\[\]{}]', search):
+                        # regex-splitter shrapnel - unparseable value means no anchor
+                        search = ""
+                else:
+                    # Legacy drafts: preserve the old behaviour verbatim -
+                    # only real-world (fictional == false) entries get searched.
+                    search = character.get("search", ch)
+
+                do_search = bool(search) and (
+                    new_contract
+                    or str(character.get("fictional", False)).lower() == "false"
+                )
+                if do_search:
                     search_out = multi_google_search(
                         chatbot, [search], outdir=outdir, animate=False
                     )
@@ -2257,6 +2311,100 @@ def get_search_queries_with_styling(chatbot, raw_sentences):
     return data["text_styling"], data["search_image"]
 
 
+def style_refs_contain_faces(chatbot, style_reference_urls, max_images=3) -> bool:
+    """Vision check: True if any style reference depicts a person/character."""
+    parts: List[Any] = []
+    for i, url in enumerate((style_reference_urls or [])[:max_images]):
+        try:
+            img_bytes = requests.get(url, timeout=30).content
+        except Exception as e:
+            logging.warning(f"style card face-check: failed to fetch {url}: {e}")
+            continue
+        parts.append(BaashaChat.Img(_bytes=img_bytes, text=f"Image {i + 1}"))
+
+    if not parts:
+        # Cannot verify -> assume contaminated so preprocessing still runs.
+        logging.warning("style card face-check: no refs downloadable; assuming faces")
+        return True
+
+    parts.append(
+        "Task: For EACH image above, does it depict any person, character, face, "
+        "figure or being (human, humanoid or animal)? Answer with exactly one line "
+        "per image: 'Image N: YES' or 'Image N: NO'."
+    )
+    response = chatbot.fetch_text(parts)
+    logging.info(f"style card face-check response: {response}")
+    return "YES" in (response or "").upper()
+
+
+def synthesize_faceless_style_card(
+    chatbot,
+    style_reference_urls,
+    image_config=None,
+    out_dir=None,
+    style_terms=None,
+) -> Optional[str]:
+    """
+    Pre-process user style references: if they depict characters, generate a
+    subject-free palette/texture sample board from them and return its URL.
+    Returns None when the refs are already face-free or synthesis fails
+    (caller falls back to the raw refs).
+    """
+    if not style_reference_urls:
+        return None
+
+    try:
+        if not style_refs_contain_faces(chatbot, style_reference_urls):
+            logging.info("style card: no characters detected in style refs; skip synthesis")
+            return None
+
+        logging.info(
+            f"style card: characters detected in style refs {style_reference_urls}; "
+            "synthesizing faceless style card"
+        )
+
+        gen_prompt = get_prompt_text("style-card-synthesis")
+        if style_terms:
+            gen_prompt += f"\nTarget palette and lighting to sample: {style_terms}"
+
+        card_config = dict(image_config or {})
+        card_config["aspect_ratio"] = "1:1"
+
+        style_ref_payload = [
+            [
+                {
+                    "url": s,
+                    "type": "style",
+                    "name": (
+                        "style source for palette, texture and lighting sampling ONLY. "
+                        "This reference depicts characters \u2014 the characters themselves "
+                        "MUST NOT appear in the output."
+                    ),
+                }
+            ]
+            for s in style_reference_urls[:3]
+        ]
+
+        urls, _, _, errors, logs = image_gen(
+            [gen_prompt],
+            style_ref_payload,
+            out_dir or "tmp",
+            card_config,
+            chatbot,
+        )
+        if errors:
+            logging.warning(f"style card synthesis errors: {errors}")
+        if urls and urls[0]:
+            logging.info(f"style card synthesized: {urls[0]}")
+            return urls[0]
+        logging.warning("style card synthesis produced no image; keeping raw style refs")
+        return None
+    except Exception as e:
+        # Fail-open: a broken pre-processor must not kill the draft pipeline.
+        logging.warning(f"style card synthesis failed; keeping raw style refs: {e}")
+        return None
+
+
 def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[str]:
     if not style_refs:
         return None
@@ -2278,11 +2426,15 @@ def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[st
             prompt = ""
             if is_last:
                 prompt = (
-                    "Analyze the shared artistic visual style across these reference images. "
-                    "Describe their core photographic medium, aesthetic style, color temperature, "
-                    "lighting warmth/coolness, and film grain in 3 to 7 highly descriptive, "
-                    "comma-separated natural English terms (e.g., 'gritty documentary photograph, warm retro film tones, deep shadows, authentic analog grain'). "
-                    "Return ONLY the comma-separated style terms. Do not add any introductory text, prefix, markdown, or punctuation outside the terms."
+                    "Analyze the artistic visual style of this reference image. "
+                    "Describe the core medium, brushwork or photographic technique, "
+                    "AND both the warm highlight tones AND the cool shadow/ambient tones used for contrast. "
+                    "Return 5 to 9 highly specific comma-separated style terms that fully describe "
+                    "both the warm accents AND the complementary cool shadows "
+                    "(e.g., 'classical oil painting on fine canvas, impasto warm amber highlights, "
+                    "deep indigo shadow contrast, Rembrandtesque chiaroscuro, jewel-toned silk pigments, "
+                    "cool ambient dusk tones'). "
+                    "Return ONLY the comma-separated terms. No prefix, no markdown, no introductory text."
                 )
             chat_parts.append(Img(_bytes=img_bytes, text=prompt))
 
@@ -2296,6 +2448,56 @@ def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[st
     return None
 
 
+_STORY_PART_PATTERN = re.compile(
+    r"\b(?:PART|EPISODE|CHAPTER)[\s\-\u2013\u2014]*"
+    r"(?:\d{1,2}|[IVXLCDM]{1,5}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b",
+    re.IGNORECASE,
+)
+
+
+def count_story_parts(raw_text):
+    if not raw_text:
+        return 0
+    found = set()
+    for match in _STORY_PART_PATTERN.finditer(raw_text):
+        found.add(" ".join(match.group(0).lower().split()))
+    return len(found)
+
+
+def build_runtime_budget_instruction(raw_text, target_duration=None):
+    total = target_duration
+    parts = count_story_parts(raw_text)
+    if (total is None or total <= 0) and parts >= 2:
+        total = 60.0 * parts
+    if not total or total <= 0:
+        return None
+    lines = [
+        "RUNTIME & RESOLUTION BUDGET (DIRECTION, NOT A STRAITJACKET):",
+        f"- The 'duration' values of ALL shots combined must total approximately "
+        f"{int(round(total))} seconds (within 10%). Do NOT compress the story "
+        f"into a fraction of this runtime.",
+        "- Distribute that runtime intelligently across the story in proportion "
+        "to each beat's narrative weight and action density \u2014 nothing about shot "
+        "count or length per scene is fixed. Shorten quiet, static beats; let "
+        "dense, consequential action breathe across more shots and deeper shot "
+        "progression. You decide the breakdown; the only fixed rule is total "
+        "runtime and full coverage.",
+    ]
+    if parts >= 2:
+        lines.append(
+            f"- The input contains {parts} labeled parts/chapters "
+            f"(PART/EPISODE/CHAPTER headings). Each part MUST be covered by its "
+            f"own dedicated block of shots, in the exact order the parts appear "
+            f"in the input. Size each part's block by its narrative content "
+            f"(~{int(round(total / parts))} seconds per part is only a starting "
+            f"point: give action-dense parts more shots and more time, and give "
+            f"sparse parts fewer, held shots \u2014 but never merge parts, never skip a "
+            f"part's narrative beats, and never represent a whole part with a "
+            f"single shot)."
+        )
+    return "\n".join(lines)
+
+
 def split_text_into_sentences_with_styling(
     chatbot,
     raw_text,
@@ -2304,6 +2506,7 @@ def split_text_into_sentences_with_styling(
     character_names=None,
     style_refs=None,
     prompt_overrides=None,
+    target_duration=None,
 ):
     is_story = content_type == "reel"
 
@@ -2332,14 +2535,27 @@ def split_text_into_sentences_with_styling(
         )
         quest = quest + char_instruction
 
-    if image_styles:
+    if image_styles and not style_refs:
+        # Only inject text-based style constraint when there is NO visual style reference image.
+        # When style_refs is present, the reference image itself carries the style signal —
+        # injecting text descriptions on top causes token stacking and severe color cast (over-warm/sepia).
         style_text = (
             image_styles.to_text()
             if hasattr(image_styles, "to_text")
             else str(image_styles)
         )
-        logging.info(f"image styles: {style_text}")
+        logging.info(f"image styles (text injection, no visual ref): {style_text}")
         quest += f"\n\nCRITICAL VISUAL CONSTRAINT: The user has explicitly requested the following visual styles, themes, and camera aesthetics: '{style_text}'. Ensure ALL generated image descriptions strictly align with this style request. If the requested style implies a non-realistic medium (e.g., Anime, Painting, Sketch), prioritize the requested medium over the 'realistic' default mentioned in the spec."
+    elif image_styles and style_refs:
+        logging.info(
+            "image styles: visual style_refs present — skipping text style injection "
+            "to prevent warm-tone token stacking and color cast"
+        )
+
+    runtime_budget = build_runtime_budget_instruction(raw_text, target_duration)
+    if runtime_budget:
+        logging.info("runtime budget injected: %s", runtime_budget)
+        quest += "\n\n" + runtime_budget
 
     output = None
     res = None
@@ -2651,7 +2867,33 @@ def multi_google_search(
     return results
 
 
-def get_img_crops(url, boxes, outdir, target_dim=1000):
+def get_equi_spaced_grid_boxes(num_panels=4, target_dim=1000):
+    """
+    Returns default equi-sized panel bounding boxes normalized to target_dim.
+    For a 2x2 grid (4 panels):
+      Panel 0: Top-Left [0, 0, mid, mid]
+      Panel 1: Top-Right [0, mid, mid, target_dim]
+      Panel 2: Bottom-Left [mid, 0, target_dim, mid]
+      Panel 3: Bottom-Right [mid, mid, target_dim, target_dim]
+    """
+    if num_panels == 4:
+        mid = target_dim // 2
+        return [
+            {"box_2d": [0, 0, mid, mid]},
+            {"box_2d": [0, mid, mid, target_dim]},
+            {"box_2d": [mid, 0, target_dim, mid]},
+            {"box_2d": [mid, mid, target_dim, target_dim]},
+        ]
+    elif num_panels == 2:
+        mid = target_dim // 2
+        return [
+            {"box_2d": [0, 0, target_dim, mid]},
+            {"box_2d": [0, mid, target_dim, target_dim]},
+        ]
+    return [{"box_2d": [0, 0, target_dim, target_dim]}]
+
+
+def get_img_crops(url, boxes, outdir, target_dim=1000, fallback_num_panels=None):
     # 1. Fetch image from URL
     response = requests.get(url, stream=True)
     if response.status_code != 200:
@@ -2667,22 +2909,50 @@ def get_img_crops(url, boxes, outdir, target_dim=1000):
     # 3. Rescale full image to 1000x1000
     rescaled_img = cv2.resize(img, (target_dim, target_dim))
 
-    x_ratio, y_ratio = 1, 1
     prefix = uuid4()
     crops = []
 
-    for i, val in enumerate(boxes):
-        box = val.get("box_2d")
-        ymin = int(box[0])
-        xmin = int(box[1])
-        ymax = int(box[2])
-        xmax = int(box[3])
+    if not boxes and fallback_num_panels:
+        boxes = get_equi_spaced_grid_boxes(fallback_num_panels, target_dim=target_dim)
+
+    for i, val in enumerate(boxes or []):
+        if isinstance(val, dict):
+            box = val.get("box_2d", val.get("box", []))
+        elif isinstance(val, (list, tuple)):
+            box = val
+        else:
+            continue
+
+        if not box or len(box) < 4:
+            continue
+
+        ymin = max(0, min(target_dim, int(box[0])))
+        xmin = max(0, min(target_dim, int(box[1])))
+        ymax = max(0, min(target_dim, int(box[2])))
+        xmax = max(0, min(target_dim, int(box[3])))
+
+        if ymax <= ymin or xmax <= xmin:
+            continue
 
         # 5. Crop from the rescaled image
         cropped_img = rescaled_img[ymin:ymax, xmin:xmax]
         p = os.path.join(outdir, f"{prefix}_crop_{i}.png")
         cv2.imwrite(p, cropped_img)
         crops.append(p)
+
+    if (not crops or (fallback_num_panels and len(crops) != fallback_num_panels)) and fallback_num_panels:
+        logging.info(
+            f"Bbox extraction returned {len(crops)} crops (expected {fallback_num_panels}). Defaulting to equi-sized square panels."
+        )
+        eq_boxes = get_equi_spaced_grid_boxes(fallback_num_panels, target_dim=target_dim)
+        eq_crops = []
+        for i, val in enumerate(eq_boxes):
+            box = val["box_2d"]
+            cropped_img = rescaled_img[box[0]:box[2], box[1]:box[3]]
+            p = os.path.join(outdir, f"{prefix}_eq_crop_{i}.png")
+            cv2.imwrite(p, cropped_img)
+            eq_crops.append(p)
+        return eq_crops
 
     return crops
 
@@ -2804,22 +3074,15 @@ def create_image_grid(
 
     if style_refs:
         total_refs.extend(style_refs)
-        # Priority 1: Use Style Reference Grounding
-        grid_prompt += "\nFollow the style reference for the visual art style, colors, lighting, and overall aesthetic of the provided style reference strictly across all panels."
-
-        # Globally append the extracted visual style terms as a clean semantic anchor
+        # Priority 1: Use Style Reference Grounding via the visual reference image.
+        # The reference image carries the full style signal. We intentionally do NOT
+        # append the extracted style text here, because duplicating warm/lighting tokens
+        # in text causes severe color stacking (over-warm / sepia cast) in diffusion models.
+        grid_prompt += "\nFollow the style reference image strictly for the visual art style, color palette, lighting mood, texture, and overall aesthetic across all panels."
         if image_styles:
-            style_text = (
-                image_styles.to_text()
-                if hasattr(image_styles, "to_text")
-                else (
-                    ", ".join(image_styles)
-                    if isinstance(image_styles, list)
-                    else str(image_styles)
-                )
-            )
-            grid_prompt += (
-                f"\nGlobal Visual Style Constraint (Semantic Anchor): '{style_text}'"
+            logging.info(
+                "create_image_grid: style_refs present — suppressing text style anchor "
+                "to prevent warm-tone token stacking"
             )
     elif image_styles:
         # Priority 2: Use generic text-based stylization only if no visual reference exists
@@ -2888,9 +3151,9 @@ def create_image_grid(
         grid_json = json.loads(markdown_parse(output))
     except Exception as e:
         logging.error(f"Failed to parse bbox json: {e} | Output: {output}")
-        return (url, [], raw_grids, grid_prompt)
+        grid_json = None
 
-    crops = get_img_crops(url, grid_json, outdir, target_dim=1000)
+    crops = get_img_crops(url, grid_json, outdir, target_dim=1000, fallback_num_panels=len(prompts))
 
     return (url, crops, raw_grids, grid_prompt)
 

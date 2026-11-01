@@ -110,11 +110,98 @@
             font-family: 'Inter', sans-serif;
             font-size: 1.05rem;
             line-height: 1.6;
-            padding-right: 6.5rem;
+            padding-right: 10.5rem;
         }
 
         .prompt-textarea::placeholder {
             color: rgba(148, 163, 184, 0.6);
+        }
+
+        /* Style reference attach (ChatGPT-style) */
+        .style-attach-btn {
+            position: absolute;
+            bottom: 4px;
+            right: 100px;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.6);
+            color: #94a3b8;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .style-attach-btn:hover {
+            color: #a78bfa;
+            border-color: rgba(139, 92, 246, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .style-attach-btn:disabled {
+            opacity: 0.45;
+            cursor: wait;
+            transform: none;
+        }
+
+        .style-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .style-attach-chip {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.4rem 0.6rem 0.4rem 0.4rem;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+
+        .style-attach-chip img {
+            width: 30px;
+            height: 30px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .style-attach-chip .chip-text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+
+        .style-attach-chip .chip-name {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #e2e8f0;
+        }
+
+        .style-attach-chip .chip-remove {
+            margin-left: 0.35rem;
+            background: none;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            padding: 0.2rem;
+            border-radius: 6px;
+        }
+
+        .style-attach-chip .chip-remove:hover {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.08);
         }
 
         /* Send / Sparkle Button inside prompt box */
@@ -399,9 +486,14 @@
                 <button class="mic-btn" id="mic-btn" type="button" title="Dictate your story">
                     <i data-lucide="mic" style="width: 18px; height: 18px;"></i>
                 </button>
+                <button class="style-attach-btn" id="style-attach-btn" type="button" title="Attach a style reference image">
+                    <i data-lucide="paperclip" style="width: 18px; height: 18px;"></i>
+                </button>
                 <button class="send-btn" id="send-btn" onclick="submitPrompt()">
                     <i data-lucide="sparkles" style="width: 20px; height: 20px;"></i>
                 </button>
+                <div class="style-attachments" id="style-attachments" style="display: none;"></div>
+                <input type="file" id="cfg-style-ref-file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif" style="display: none;" onchange="onStyleRefFileSelect(this)">
             </div>
             <div class="dictation-status" id="dictation-status"></div>
             <!-- Preset Selector Group -->
@@ -532,6 +624,10 @@
                         <option value="Fenrir">Fenrir (Premium UGC)</option>
                     </select>
                 </div>
+                <div class="field-group">
+                    <label class="field-label">Target Runtime (sec)</label>
+                    <input type="number" class="field-input" id="cfg-duration" min="10" step="5" placeholder="Auto (1 min per Part)">
+                </div>
                 <div class="field-group" style="grid-column: span 2;">
                     <!-- Spacer since Workflow Mode moved out -->
                 </div>
@@ -554,8 +650,7 @@
                     </label>
                 </div>
                 <div class="field-group" style="grid-column: span 2;">
-                    <label class="field-label">Style Reference URL</label>
-                    <input type="text" class="field-input" id="cfg-style-ref" value="https://tempp.us-east-1.linodeobjects.com/Screenshot%20from%202026-04-30%2004-59-08.png" readonly style="opacity: 0.6; cursor: not-allowed;">
+                    <label class="field-label">Style reference is attached from the prompt box (paperclip icon). Leave empty for text-style only.</label>
                 </div>
             </div>
         </div>
@@ -591,8 +686,6 @@
             }
         }
 
-        const DEFAULT_STYLE_REF = "https://tempp.us-east-1.linodeobjects.com/Screenshot%20from%202026-04-30%2004-59-08.png";
-
         const STAGE_BY_MODE = { review: 0, prompts: 2, auto: 4 };
 
         const IS_LOCAL_HOST = ['localhost', '127.0.0.1', '[::1]'].indexOf(
@@ -600,6 +693,81 @@
         ) !== -1;
 
         const CONFIG_DEFAULT = '';
+
+        let styleRefUrl = "";
+        let styleRefName = "";
+
+        function renderStyleRefChip(busy) {
+            const row = document.getElementById('style-attachments');
+            if (busy) {
+                row.innerHTML =
+                    `<div class="style-attach-chip" id="style-attach-chip">
+                        <div class="chip-text"><span class="chip-name">${styleRefName || 'Uploading...'}</span><span>uploading style reference...</span></div>
+                    </div>`;
+                row.style.display = 'flex';
+                return;
+            }
+            if (!styleRefUrl) {
+                row.innerHTML = '';
+                row.style.display = 'none';
+                return;
+            }
+            row.innerHTML =
+                `<div class="style-attach-chip" id="style-attach-chip">
+                    <img src="${styleRefUrl}" alt="style ref">
+                    <div class="chip-text"><span class="chip-name" title="${styleRefName || ''}">${styleRefName || 'style reference'}</span><span>style reference attached</span></div>
+                    <button class="chip-remove" onclick="removeStyleRef()" title="Remove style reference">
+                        <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+                    </button>
+                </div>`;
+            row.style.display = 'flex';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function removeStyleRef() {
+            styleRefUrl = "";
+            styleRefName = "";
+            const btn = document.getElementById('style-attach-btn');
+            btn.disabled = false;
+            document.getElementById('cfg-style-ref-file').value = '';
+            renderStyleRefChip(false);
+        }
+
+        async function onStyleRefFileSelect(input) {
+            const file = input.files && input.files[0];
+            input.value = '';
+            if (!file) return;
+
+            const btn = document.getElementById('style-attach-btn');
+            styleRefName = file.name;
+            styleRefUrl = "";
+            btn.disabled = true;
+            renderStyleRefChip(true);
+            try {
+                const form = new FormData();
+                form.append('file', file);
+                const response = await fetch('/upload/style_ref', {
+                    method: 'POST',
+                    body: form
+                });
+                const body = await response.json();
+                if (!response.ok) {
+                    throw new Error(body.message || `Upload failed (${response.status})`);
+                }
+                styleRefUrl = body.url;
+                renderStyleRefChip(false);
+            } catch (err) {
+                styleRefName = "";
+                renderStyleRefChip(false);
+                alert(`Style reference upload failed: ${err.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById('style-attach-btn').addEventListener('click', function () {
+            document.getElementById('cfg-style-ref-file').click();
+        });
 
         if (IS_LOCAL_HOST) {
             document.getElementById('cfg-img-engine').value = CONFIG_DEFAULT;
@@ -612,7 +780,6 @@
             const accordionContent = document.getElementById('accordion-content');
             const arrow = document.getElementById('accordion-arrow');
             const badge = document.getElementById('preset-info-badge');
-            const styleRefInput = document.getElementById('cfg-style-ref');
 
             if (preset === 'low') {
                 document.getElementById('cfg-img-engine').value = 'fal/gpt';
@@ -620,11 +787,7 @@
                 document.getElementById('cfg-upscale-crops').checked = false;
                 document.getElementById('cfg-voice-id').value = 'gtts';
 
-                // Reset style ref and make read-only
-                styleRefInput.value = DEFAULT_STYLE_REF;
-                styleRefInput.readOnly = true;
-                styleRefInput.style.opacity = "0.6";
-                styleRefInput.style.cursor = "not-allowed";
+                // Style ref is always user-provided (URL or upload); presets leave it untouched
 
                 // Hide or collapse the config parameters for Low preset
                 accordionContent.classList.add('collapsed');
@@ -640,11 +803,7 @@
                 document.getElementById('cfg-upscale-crops').checked = true;
                 document.getElementById('cfg-voice-id').value = 'Fenrir';
 
-                // Reset style ref and make read-only
-                styleRefInput.value = DEFAULT_STYLE_REF;
-                styleRefInput.readOnly = true;
-                styleRefInput.style.opacity = "0.6";
-                styleRefInput.style.cursor = "not-allowed";
+                // Style ref is always user-provided (URL or upload); presets leave it untouched
 
                 // Hide or collapse the config parameters for Medium preset
                 accordionContent.classList.add('collapsed');
@@ -660,11 +819,6 @@
                 document.getElementById('cfg-judge-grids').checked = false;
                 document.getElementById('cfg-upscale-crops').checked = false;
                 document.getElementById('cfg-voice-id').value = 'gtts';
-
-                // Make style ref editable
-                styleRefInput.readOnly = false;
-                styleRefInput.style.opacity = "1";
-                styleRefInput.style.cursor = "text";
 
                 // Make accordion visible and expand it!
                 accordion.style.display = 'block';
@@ -842,6 +996,12 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
                 return;
             }
 
+            if (document.getElementById('style-attach-btn').disabled) {
+                alert("Style reference is still uploading. Please wait a moment.");
+                return;
+            }
+            const styleRef = styleRefUrl;
+
             // Enable transition screen
             const loader = document.getElementById('overlay-loader');
             loader.classList.add('active');
@@ -863,8 +1023,6 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             const useGrid = document.getElementById('cfg-use-grid').checked;
             const judgeGrids = document.getElementById('cfg-judge-grids').checked;
             const upscaleCrops = document.getElementById('cfg-upscale-crops').checked;
-            const styleRef = document.getElementById('cfg-style-ref').value.trim() || DEFAULT_STYLE_REF;
-            const styleRefs = [styleRef];
 
             // Compile payload
             const payload = {
@@ -872,7 +1030,6 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
                 story: storyVal,
                 title: storyVal.substring(0, 30) + "...",
                 content_type: "viral short form social media content",
-                style_reference_urls: styleRefs,
                 use_character_refs: true,
                 use_image_grid: useGrid,
                 stop_at_stage: stopStage,
@@ -883,6 +1040,11 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             if (imgEngine) payload.image_engine = imgEngine;
             if (voiceId) payload.voice_id = voiceId;
             if (visualEngine) payload.visual_engine = visualEngine;
+
+            const durationSec = parseFloat(document.getElementById('cfg-duration').value);
+            if (!isNaN(durationSec) && durationSec > 0) payload.duration = durationSec;
+
+            if (styleRef) payload.style_reference_urls = [styleRef];
 
             if (!IS_LOCAL_HOST) {
                 payload.gen_video_conf = "v4";
