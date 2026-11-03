@@ -285,7 +285,9 @@ def generate_image(
         arguments["image_url"] = image_urls[0]
 
     if image_engine == "fal/gpt":
-        model = "openai/gpt-image-2/edit"
+        # The /edit endpoint requires image_urls; fall back to the plain
+        # text-to-image endpoint when no references were provided.
+        model = "openai/gpt-image-2/edit" if image_urls else "openai/gpt-image-2"
 
     result = fal.subscribe(model, arguments=arguments, with_logs=False)
 

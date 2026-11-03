@@ -2694,7 +2694,13 @@ def split_text_into_sentences_with_styling(
         prev_motion = o.get("state_transition_prompt")
 
         if prev_motion and motion_prompt:
-            motion_prompt = f"start: {prev_motion}, end: {motion_prompt}"
+            combined = f"start: {prev_motion}, end: {motion_prompt}"
+            # Respect the short-prompt budget for i2v conditioning: a bloated
+            # "start:..., end:..." dilutes attention. Prefer the end-state
+            # (current shot) prompt whenever the combined form exceeds budget.
+            motion_prompt = combined if len(combined) <= 400 else motion_prompt
+        elif prev_motion:
+            motion_prompt = prev_motion
 
         if o.get("audio_type") == "dialogue" and motion_prompt:
             motion_prompt = f"{motion_prompt}, dialogue: {sentence}"

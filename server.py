@@ -1649,9 +1649,10 @@ class DraftResource(Resource):
 
                             if not prompt_text:
                                 prompt_text = (
-                                    "The camera maintains a slow, steady, and visually stable dolly-in movement to enhance depth. "
-                                    "Ensure absolute anatomical integrity. The background environment and room geometry remain "
-                                    "completely static and locked in place. Do not animate any mouth or lip movement."
+                                    "The subjects stay exactly as framed in the source image; body sizes never change. "
+                                    "The scenery and room geometry stay fixed where they are. Only a faint ambient "
+                                    "shimmer of dust and light moves in the background. Mouths stay closed. The clip "
+                                    "resolves to complete stillness in the final half-second."
                                 )
 
                             if (
@@ -1665,22 +1666,24 @@ class DraftResource(Resource):
                             selected_desp.append(prompt_text)
                             selected_pos.append(obj["pos"] - 1)
                             force_regen.append(obj.get("regen"))
-                        else:
-                            speech_text = video_data["text"][obj["pos"] - 1]
-                            prompt_text = (
-                                f"The camera maintains a slow, steady, and visually stable dolly-in movement to enhance depth, "
-                                f"matching the emotional tone of the scene: '{speech_text}'. Ensure absolute anatomical integrity. "
-                                f"The background environment and room geometry remain completely static and locked in place. "
-                                f"Do not animate any mouth or lip movement."
-                            )
-                            if image_unified_style:
-                                prompt_text = (
-                                    prompt_text + " aesthetic: " + image_unified_style
-                                )
 
-                            selected_desp.append(prompt_text)
-                            selected_pos.append(obj["pos"] - 1)
-                            force_regen.append(obj.get("regen"))
+                    else:
+                        speech_text = video_data["text"][obj["pos"] - 1]
+                        prompt_text = (
+                            f"The subjects stay exactly as framed in the source image; body sizes never change. "
+                            f"The scenery and room geometry stay fixed where they are. Only a faint ambient "
+                            f"shimmer of dust and light moves in the background, matching the emotional tone "
+                            f"of the line: '{speech_text}'. Mouths stay closed. The clip resolves to complete "
+                            f"stillness in the final half-second."
+                        )
+                        if image_unified_style:
+                            prompt_text = (
+                                prompt_text + " aesthetic: " + image_unified_style
+                            )
+
+                        selected_desp.append(prompt_text)
+                        selected_pos.append(obj["pos"] - 1)
+                        force_regen.append(obj.get("regen"))
 
                 try:
                     if len(selected_images) < 1:
