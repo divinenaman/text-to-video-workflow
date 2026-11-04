@@ -9,6 +9,10 @@ from . import errors, text_embeddings
 import time
 import atexit
 import threading
+import os
+import re
+import shutil
+import subprocess
 from . import build_scraper
 
 select_image_prompt = """Given a screenshot of an image search repository webpage, select the single best image most appropriate for the given search query.
@@ -30,6 +34,118 @@ Format your output as a JSON object enclosed in ```json with keys:
 
 Search Query:
 """
+
+
+LIGHTPANDA_CONTEXT_CHARS = 16000
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _extract_main_text(html: str):
+    """Reader-mode style main-content extraction. Best-effort trafilatura."""
+    if not html or len(html) < 200:
+        return None
+    try:
+        import trafilatura
+
+        return trafilatura.extract(html, include_comments=False)
+    except Exception:
+        logging.info("trafilatura extraction unavailable, using raw text")
+    return None
+
+
+def _clean_markdown(text: str):
+    """Strip markdown link targets / images so nav chrome does not eat the
+    context budget."""
+    if not text:
+        return ""
+    text = _MD_IMG_RE.sub("", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    lines = [ln.strip() for ln in text.splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
+_lightpanda_bin_cache = None
+
+
+def _lightpanda_bin():
+    """Resolve the Lightpanda CLI binary (replaces screenshot->vision summaries)."""
+    global _lightpanda_bin_cache
+    if _lightpanda_bin_cache is not None:
+        return _lightpanda_bin_cache
+    bin_path = os.environ.get("LIGHTPANDA_BIN") or shutil.which("lightpanda")
+    if bin_path and os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
+        _lightpanda_bin_cache = bin_path
+        return _lightpanda_bin_cache
+    _lightpanda_bin_cache = ""
+
+    return _lightpanda_bin_cache
+
+
+def fetch_page_text(url, wait_ms=1500, timeout=25, obey_robots=False):
+    """Fetch a page and extract its main text content.
+
+    Chain: Lightpanda html dump -> trafilatura (reader-mode main content);
+    then Lightpanda markdown dump (links stripped); finally plain requests+bs4.
+    Returns a plain-text string; empty string on failure.
+    """
+    if not isinstance(url, str) or not url.startswith("http"):
+        return ""
+
+    def dump(mode):
+        bin_path = _lightpanda_bin()
+        if not bin_path:
+            return None
+        try:
+            cmd = [bin_path, "fetch", "--dump", mode, "--wait-ms", str(wait_ms), url]
+            if obey_robots:
+                cmd.insert(1, "--obey-robots")
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+                check=True,
+            )
+            return res.stdout.decode("utf-8", errors="replace").strip()
+        except Exception as e:
+            logging.info(f"lightpanda-{mode} dump: error for {url} : {e}")
+            return None
+
+    # 1) JS-rendered html -> main-content extraction
+    text = _extract_main_text(dump("html") or "")
+
+    # 2) markdown dump without link targets (chrome text still present)
+    if not text:
+        text = _clean_markdown(dump("markdown") or "")
+        logging.info(f"fetch_page_text: trafilatura empty for {url}, using raw markdown")
+
+    # 3) plain http fetch, no browser
+    if not text:
+        try:
+            import requests
+
+            res = requests.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) "
+                    "Gecko/20100101 Firefox/130.0"
+                },
+                timeout=timeout,
+            )
+            text = _extract_main_text(res.text)
+            if not text:
+                from bs4 import BeautifulSoup
+
+                soup = BeautifulSoup(res.text, "html.parser")
+                for tag in soup(["script", "style", "noscript", "head", "nav", "footer"]):
+                    tag.decompose()
+                text = " ".join(soup.stripped_strings)
+        except Exception as e:
+            logging.error(f"fetch_page_text: failed for {url} : {e}")
+
+    return (text or "").strip()
 
 
 class BrowserManager:
@@ -294,9 +410,128 @@ def find_image_focus_direction(images, chatbot: Chatbot.ChatInterface):
     return output
 
 
+_shared_browser_manager: BrowserManager = None
+_shared_browser_lock = threading.Lock()
+
+
+def get_shared_browser_manager():
+    """Process-wide lazy browser so repeated visual calls skip the 2-5s
+    Firefox relaunch. Closed via atexit."""
+    global _shared_browser_manager
+    with _shared_browser_lock:
+        if _shared_browser_manager is None:
+            _shared_browser_manager = BrowserManager()
+            _shared_browser_manager.start()
+            atexit.register(_shared_browser_manager.stop)
+    return _shared_browser_manager
+
+
+DDGS_MIN_WIDTH = 500
+DDGS_MIN_HEIGHT = 300
+DDGS_MAX_ASPECT = 2.3
+DDGS_MAX_VETOES = 3
+
+
+ddgs_image_pick_prompt = """Is this image a good visual reference for the query? Reject if it is a cartoon/drawing/CGI, contains text overlay/logo/watermark/UI, is a collage or grid, tiny thumbnail, group shot, or does not match the query subject.
+Output a JSON object enclosed in ```json with keys: "ok": true/false, "reason": short.
+Query:
+"""
+
+
+def _ddgs_rank_and_pick(query, results):
+    """Filter + rank ddgs image metadata by semantic similarity to the query."""
+    valid = []
+    for r in results:
+        try:
+            w, h = int(r.get("width") or 0), int(r.get("height") or 0)
+        except Exception:
+            w, h = 0, 0
+        if w < DDGS_MIN_WIDTH or h < DDGS_MIN_HEIGHT:
+            continue
+        if not (1 / DDGS_MAX_ASPECT <= w / h <= DDGS_MAX_ASPECT):
+            continue
+        if not r.get("image"):
+            continue
+        valid.append(r)
+
+    if not valid:
+        return []
+
+    titles = [(r.get("title") or "") + " " + (r.get("source") or "") for r in valid]
+    try:
+        sims = text_embeddings.embedding_gemini_compare(query, titles)
+    except Exception as e:
+        logging.info(f"ddgs-image-search: embedding rank failed : {e}")
+        sims = []
+
+    for i, r in enumerate(valid):
+        r["_score"] = (sims[i] if i < len(sims) else 0.0) + min(
+            0.3, max(0, (int(r.get("width") or 0) - DDGS_MIN_WIDTH) / 4000)
+        )
+
+    valid.sort(key=lambda r: r["_score"], reverse=True)
+    return valid
+
+
+def ddgs_image_search(q, chatbot: Chatbot.ChatInterface = None):
+    """Fallback image search using ddgs metadata (no browser). Rate-limited by
+    DuckDuckGo, so only used when the visual browser path fails."""
+    try:
+        from ddgs import DDGS
+
+        results = DDGS().images(q, max_results=15, safesearch="off")
+        ranked = _ddgs_rank_and_pick(q, results)
+        logging.info(f"ddgs-image-search: {len(ranked)} ranked results for {q}")
+
+        veto_checks = 0
+        for r in ranked:
+            src = r.get("image")
+            try:
+                import requests as _requests
+
+                img_res = _requests.get(
+                    src,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) "
+                        "Gecko/20100101 Firefox/130.0"
+                    },
+                    timeout=10,
+                )
+                if img_res.status_code != 200 or len(img_res.content) < 5000:
+                    continue
+                img_bytes = img_res.content
+            except Exception as e:
+                logging.info(f"ddgs-image-search: fetch failed {src} : {e}")
+                continue
+
+            veto = False
+            if chatbot is not None and veto_checks < DDGS_MAX_VETOES:
+                veto_checks += 1
+                try:
+                    check_cb = new_summarizer_chatbot(chatbot)
+                    check_cb.new_conversation()
+                    prompt = Chatbot.Img(
+                        _bytes=img_bytes, text=ddgs_image_pick_prompt + q
+                    )
+                    out = markdown_parse(check_cb.fetch_text(prompt))
+                    parsed = json.loads(out)
+                    veto = parsed.get("ok") is False
+                    logging.info(
+                        f"ddgs-image-search: veto={veto} for {src} : {parsed.get('reason')}"
+                    )
+                except Exception as e:
+                    logging.info(f"ddgs-image-search: vision veto error : {e}")
+
+            if not veto:
+                return src, None
+    except Exception as e:
+        logging.error(f"ddgs-image-search: {e}")
+    return None, None
+
+
 @errors.log_ctx_errors
-def search(q, chatbot: Chatbot.ChatInterface):
-    browser_manager = BrowserManager()
+def search_visual(q, chatbot: Chatbot.ChatInterface):
+    browser_manager = get_shared_browser_manager()
     page = browser_manager.get_page()
     src = None
     val = {}
@@ -369,36 +604,72 @@ def search(q, chatbot: Chatbot.ChatInterface):
         logging.error(f"playwright-image-search: {e}")
     finally:
         page.close()
-        browser_manager.stop()
 
     return src, val.get("color")
 
 
+SUMMARIZE_CHATBOT = os.environ.get(
+    "SUMMARIZE_CHATBOT",
+    "gemini_rest#gemini-3.5-flash-lite, groq",
+)
+
+
+def new_summarizer_chatbot(fallback: Chatbot.ChatInterface = None):
+    """Dedicated cheap/fast chatbot for search-grounding summaries, independent
+    of the primary chatbot chain. A fresh instance per call avoids shared state
+    under concurrent summarization. Falls back to `fallback` if unavailable."""
+    try:
+        return Chatbot.ChatInterface(SUMMARIZE_CHATBOT)
+    except Exception as e:
+        logging.error(
+            f"summarizer chatbot '{SUMMARIZE_CHATBOT}' init failed: {e}, "
+            "falling back to caller chatbot"
+        )
+        return fallback
+
+
+@errors.log_ctx_errors
+def search(q, chatbot: Chatbot.ChatInterface):
+    """Primary: browser-based visual search. Fallback: ddgs metadata search
+    (keyless, no browser, but rate-limited)."""
+    src, color = search_visual(q, chatbot)
+    if src:
+        return src, color
+
+    logging.info(f"search: visual path failed for {q}, trying ddgs fallback")
+    return ddgs_image_search(q, chatbot)
+
+
 @errors.log_ctx_errors
 def summarize_page(chatbot: Chatbot.ChatInterface, link, topic, word_limit=100):
-    browser_manager = BrowserManager()
-    page = browser_manager.get_page()
-
+    """Fetch a page's text (Lightpanda markdown dump, bs4 fallback) and summarize
+    it with the dedicated summarizer chatbot. No browser screenshots / vision LLM
+    needed for context."""
     try:
-        page.goto(link)
-        page.evaluate("window.scrollBy(0, 200);")
+        text = fetch_page_text(link)
+        if not text:
+            logging.info(f"summarize_page: no text fetched for {link}")
+            return ""
 
-        img_bytes = page.screenshot()
+        text = text[:LIGHTPANDA_CONTEXT_CHARS]
 
-        task = f"Give a topic: {topic}, create a summary around it using the below image, add only revelant information with dates, outcomes, results using max {word_limit} words. Format as a single paragraph and enclose it with ```summary"
-        prompt = Chatbot.Img(_bytes=img_bytes, text=task)
-        res = chatbot.fetch_text(prompt)
+        task = (
+            f"Give a topic: {topic}, create a summary around it using the below page text, "
+            f"add only relevant information with dates, outcomes, results using max {word_limit} words. "
+            f"Ignore navigation menus, tables of contents and unrelated sections. "
+            f"Output an empty summary only if the page text has nothing at all related to the topic. "
+            f"Format as a single paragraph and enclose it with ```summary\n\nPage text:\n{text}"
+        )
+        sum_chatbot = new_summarizer_chatbot(chatbot)
+        sum_chatbot.new_conversation()
+        res = sum_chatbot.fetch_text(task)
 
         try:
-            return markdown_parser(res, lang="summary")
-        except:
+            return markdown_parse(res, lang="summary")
+        except Exception:
             return res
-
     except Exception as e:
         raise e
-    finally:
-        page.close()
-        browser_manager.stop()
 
 
 if __name__ == "__main__":
