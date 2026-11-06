@@ -53,6 +53,7 @@ from baasha_pipeline.image_search_agent import (
     summarize_page,
 )
 from baasha_pipeline import motion_graphics_agent
+from baasha_pipeline import lottie_assets
 from models import AssetGenStages
 import cv2
 import numpy as np
@@ -753,6 +754,7 @@ def find_story_characters(
     user_characters=None,
     cinematic_data=None,
     prompt_overrides=None,
+    visual_engine="image",
 ):
     banned_words = get_prompt_text("banned-words")
 
@@ -772,6 +774,18 @@ def find_story_characters(
     prompt = get_prompt_text(prompt_key, prompt_overrides).format(
         TEXT=story_text, BANNED_WORDS=banned_words
     )
+    if str(visual_engine).startswith("lottie"):
+        prompt += (
+            "\n\n### Lottie cast constraints\n"
+            "Return only sentient characters explicitly present in the story: "
+            "people, animals, or clearly sentient beings. Do not cast locations, "
+            "buildings, architecture, weather, objects, or abstract ideas as "
+            "characters; they belong in scene artwork. Do not invent a character, "
+            "name, age, occupation, relationship, or life-stage change that the "
+            "story does not state. Keep one canonical entry for each character "
+            "unless the story explicitly depicts that same character at distinct "
+            "ages or physical states. Preserve the story's stated identity details."
+        )
 
     identified_characters = set()
     if user_characters:
@@ -812,28 +826,100 @@ def find_story_characters(
         prompt += (
             f"\n\nCRITICAL SPEAKER & CHARACTER EXPECTANCY:\n"
             f"The screenplay generator has already identified and referred to the following character names in the screenplay: {char_list_str}.\n"
-            f"You MUST generate a visual casting profile and voice description for EXACTLY these characters. Do not invent new names or ignore these. Ensure they match exactly."
+            f"You MUST generate a visual casting profile and voice description for every individual person in that list. Do not invent new names or ignore these. Ensure they match exactly.\n"
+            f"But if a listed name combines multiple characters (e.g. 'Ram and Sita') or a collective (e.g. 'the Vanara Army'), you MUST NOT produce a combined entry: emit one separate entry per named individual, and skip collectives entirely."
         )
 
     image_prompt_spec = get_image_prompt_spec(is_styled=bool(style_refs)) or ""
     prompt = image_prompt_spec + "\n\n" + prompt if image_prompt_spec else prompt
 
+    def _parse_chars(raw_text):
+        return PromptSplitters.json_splitter(
+            {
+                "json_keys": [
+                    "name",
+                    "description",
+                    "search",
+                    "voice_description",
+                ],
+                "join": False,
+            }
+        )(raw_text)
+
+    def _name_filter(items):
+        out = []
+        for x in items:
+            if isinstance(x, dict) and str(x.get("name") or "").strip():
+                out.append(x)
+        return out
+
     raw_text = generate_data(chatbot, "find_characters", prompt)
-    parsed_text = PromptSplitters.json_splitter(
-        {
-            "json_keys": [
-                "name",
-                "description",
-                "fictional",
-                "search",
-                "voice_description",
-            ],
-            "join": False,
+    filtered = _name_filter(_parse_chars(raw_text))
+    # Transient LLM failures must not silently zero out the character bible.
+    for _attempt in range(2):
+        if filtered:
+            break
+        logging.warning(
+            "find-characters parse empty (raw head=%r); retrying",
+            (raw_text or "")[:400],
+        )
+        time.sleep(8)
+        raw_text = generate_data(chatbot, "find_characters", prompt)
+        filtered = _name_filter(_parse_chars(raw_text))
+        if not filtered and raw_text:
+            try:
+                jj = json.loads(markdown_parse(raw_text, lang="json"))
+            except Exception:
+                jj = None
+            if jj is None:
+                # reasoning models slip on separators - repair before giving up
+                try:
+                    from json_repair import repair_json
+
+                    jj = json.loads(
+                        repair_json(markdown_parse(raw_text, lang="json") or raw_text)
+                    )
+                except Exception:
+                    jj = None
+            if jj is not None:
+                if isinstance(jj, list):
+                    items = jj
+                elif isinstance(jj, dict):
+                    items = jj.get("characters") or jj.get("cast") or []
+                else:
+                    items = []
+                filtered = _name_filter(items)
+
+    if not filtered:
+        # LLM outage safety net: downstream scene composition needs # CHARACTERS[...]
+        # entries, so derive a minimal cast from proper nouns in the story.
+        stopwords = {
+            "the", "a", "an", "her", "his", "she", "he", "they", "them",
+            "their", "we", "you", "it", "its", "and", "but", "or", "so",
+            "then", "together", "meanwhile", "suddenly", "after", "before",
+            "when", "while", "one", "two", "first", "next", "later",
+            "finally", "that", "this", "there", "here", "now", "soon",
+            "once", "again", "still", "just", "very",
         }
-    )(raw_text)
-    filtered = list(
-        filter(lambda x: x.get("name") != None and x.get("name") != "", parsed_text)
-    )
+        names = []
+        for tok in re.findall(r"\b[A-Z][A-Za-z0-9_-]{1,}\b", story_text):
+            if tok.lower() in stopwords or tok in names:
+                continue
+            names.append(tok)
+        filtered = [
+            {
+                "name": n,
+                "description": f"character in the story: {n}",
+                "search": "",
+                "voice_description": "",
+            }
+            for n in names[:4]
+        ]
+        if filtered:
+            logging.warning(
+                "find-characters heuristic fallback cast: %s",
+                [x["name"] for x in filtered],
+            )
 
     process_prompts = []
     for r in filtered:
@@ -864,6 +950,7 @@ def generate_character_bible(
     user_characters=None,
     cinematic_data=None,
     prompt_overrides=None,
+    visual_engine="image",
 ):
     """
     Identifies characters and generates their visual references eagerly and in batch.
@@ -879,6 +966,7 @@ def generate_character_bible(
         user_characters=user_characters,
         cinematic_data=cinematic_data,
         prompt_overrides=prompt_overrides,
+        visual_engine=visual_engine,
     )
 
     char_image_config = image_config.copy()
@@ -893,10 +981,88 @@ def generate_character_bible(
             {
                 "url": s,
                 "type": "style",
-                "name": "COMPLETELY IGNORE any faces, identities, or characters in this image. Use it EXCLUSIVELY for lighting, color grading, and texture only.",
+                "name": (
+                    "CRITICAL: This style reference may itself depict a person or "
+                    "character. That depicted subject, its face, and its figure MUST "
+                    "NOT appear anywhere in the generated portrait. Use the reference "
+                    "EXCLUSIVELY for lighting, color grading, and texture."
+                ),
             }
             for s in style_reference_urls
         ]
+
+    if str(visual_engine).startswith("lottie"):
+        complexity = "L1"
+        if "#" in str(visual_engine):
+            complexity = str(visual_engine).split("#", 1)[1] or "L1"
+        style_context = (
+            image_styles.to_text()
+            if image_styles and hasattr(image_styles, "to_text")
+            else (", ".join(image_styles) if isinstance(image_styles, list) else "")
+        )
+        lottie_outdir = f"lottie/{outdir}"
+
+        def _lottie_is_being(c):
+            """Lottie rigs are for sentient cast members only. Story objects
+            (seed packets, plants, tools) cost an authoring loop each and render
+            as humanoid fallback templates - scenes should carry them as props."""
+            text = f"{c.get('name', '')} {c.get('description', '')}".lower()
+            being = re.search(
+                r"\b(boy|girl|man|woman|men|women|child|kid|person|people|human|"
+                r"robot|android|bot|creature|animal|monster|beast|hero|heroine|"
+                r"princess|prince|king|queen|wizard|witch|fairy|spirit|dragon|"
+                r"alien|talking|protagonist|character|dog|cat|puppy|kitten)\b",
+                text,
+            )
+            nonbeing = re.search(
+                r"\b(packet|seed|flower|sunflower|plant|tree|rock|stone|ball|toy|"
+                r"object|item|tool|shovel|spade|house|shed|door|car|box|book|"
+                r"sword|crown|cup|phone|pot|can|egg|bread|cake|stepwell|"
+                r"landmark|location|setting|structure|architecture|temple|"
+                r"palace|fort|city|street|alley|river|mountain|forest|garden|"
+                r"building|weather|monsoon|cloud|waterfall)\b",
+                text,
+            )
+            if being:
+                return True
+            if nonbeing:
+                return False
+            return True
+
+        for i, char in enumerate(characters):
+            if char.get("lottie_url") or char.get("url"):
+                continue
+            if not _lottie_is_being(char):
+                logging.info(
+                    "lottie: skipping rig for non-character story element %r "
+                    "(scenes will carry it as a prop)",
+                    char.get("name"),
+                )
+                continue
+            desc = char.get("description") or "A clear, distinctive character."
+            routing_cfg = app_config.get().get("chatbot_codegen")
+            gen_chatbot = chatbot
+            if routing_cfg and str(routing_cfg).strip():
+                try:
+                    gen_chatbot = BaashaChat.ChatInterface(str(routing_cfg).strip())
+                except Exception as e:
+                    logging.warning(
+                        "lottie: codegen chatbot chain failed to load (%s); "
+                        "falling back to primary chain",
+                        e,
+                    )
+                    gen_chatbot = chatbot
+            entry = lottie_assets.author_character_rig(
+                gen_chatbot,
+                char.get("name") or f"character_{i}",
+                desc,
+                style_context=style_context,
+                complexity=complexity,
+                outdir=lottie_outdir,
+            )
+            if entry:
+                char.update(entry)
+        return characters
 
     search_tasks = {}
     for i, char in enumerate(characters):
@@ -915,11 +1081,18 @@ def generate_character_bible(
         if char.get("url"):
             continue
 
-        # 2. Extract real-world search tasks
-        search_query = char.get("search")
-        is_fictional = str(char.get("fictional", "true")).lower() == "true"
+        # 2. Extract real-world search tasks. The presence of a non-empty
+        # 'search' query IS the switch: a query means img2img anchor casting
+        # (real person or canonical mythological depiction); an empty query
+        # means the model invents the character from the description alone.
+        search_query = (str(char.get("search") or "").strip() or "").strip()
+        if search_query.lower() in ("none", "null", "no", "n/a", "false"):
+            search_query = ""
+        if re.search(r'[",\[\]{}]', search_query):
+            # regex-splitter shrapnel - an unparseable value means no anchor
+            search_query = ""
 
-        if search_query and not is_fictional:
+        if search_query:
             search_tasks[i] = search_query
 
     # Execute searches in parallel
@@ -976,13 +1149,23 @@ def generate_character_bible(
                     )
                     clean_desc = desc.split("SINGLE FRAME ONLY.")[0].strip()
 
+                    if str(char.get("fictional", "true")).lower() == "true":
+                        identity_instruction = (
+                            "1. Use the face structure, ethnic features, complexion, and physical build of the person in the character reference image ONLY as a lookalike anchor approximating the subject's identity - do not copy any clothing, styling or modern props from that reference.\n"
+                            "2. Wherever the Subject Description specifies attire, ornaments, hairstyle or age, the Subject Description WINS - repaint the subject to match it exactly.\n"
+                        )
+                    else:
+                        identity_instruction = (
+                            "1. Extract the exact face structure, physical features, and build from the character reference image to maintain absolute identity consistency.\n"
+                            "2. Apply the visual medium, art style, rendering texture, and aesthetic of the provided style reference image perfectly onto the subject.\n"
+                        )
+
                     upscale = (
                         f"HIGH FIDELITY STYLE TRANSFER & REGENERATION PORTRAIT.\n"
                         f"Subject Description: {clean_desc}\n\n"
                         f"INSTRUCTIONS:\n"
-                        f"1. Extract the exact face structure, physical features, and build from the character reference image to maintain absolute identity consistency.\n"
-                        f"2. Apply the visual medium, art style, rendering texture, and aesthetic of the provided style reference image perfectly onto the subject.\n"
-                        f"3. Output a clean, high-quality, single-subject full frame portrait. No grids, no comic dividers, no split screens."
+                        f"{identity_instruction}"
+                        f"3. Output a clean, high-quality, straight, front-facing, head-and-shoulders portrait: subject centered, looking directly at the viewer, neutral calm expression, plain uncluttered background, even soft lighting, full visible detail of face, hairstyle, garments and ornaments. No action pose, no environment, no grids, no comic dividers, no split screens."
                     )
                     prompts_to_gen.append(upscale)
                     char_indices.append(i)
@@ -991,7 +1174,20 @@ def generate_character_bible(
 
         desc = char.get("description")
         if desc:
-            prompts_to_gen.append(desc)
+            portrait_framing = (
+                "Straight, front-facing, head-and-shoulders portrait: subject "
+                "centered, looking directly at the viewer, neutral calm "
+                "expression, plain uncluttered background, even soft lighting, "
+                "full visible detail of face, hairstyle, garments and ornaments. "
+                "No action pose, no environment, no other figures in frame."
+            )
+            core, sep, tail = desc.partition("SINGLE FRAME ONLY.")
+            if sep:
+                prompts_to_gen.append(
+                    core.strip() + ". " + portrait_framing + " SINGLE FRAME ONLY." + tail
+                )
+            else:
+                prompts_to_gen.append(f"{desc} {portrait_framing}")
             char_indices.append(i)
 
     if prompts_to_gen:
@@ -1537,13 +1733,33 @@ def get_prompt_character_ref_urls(
                 # if is_url false then its the index of chracter_list
                 character = character_list[match_data]
                 desp = character["description"]
-                fictional = character.get("fictional", False)
-                search = character.get("search", ch)
 
                 # gen
                 urls = []
 
-                if search and (not fictional or fictional == "false"):
+                new_contract = (
+                    "search" in character and "fictional" not in character
+                )
+                if new_contract:
+                    # A non-empty search query IS the anchor switch (replaces
+                    # the old fictional flag): query => img2img anchor casting,
+                    # empty => invent the character from the description.
+                    search = (str(character.get("search") or "").strip() or "").strip()
+                    if search.lower() in ("none", "null", "no", "n/a", "false"):
+                        search = ""
+                    if re.search(r'[",\[\]{}]', search):
+                        # regex-splitter shrapnel - unparseable value means no anchor
+                        search = ""
+                else:
+                    # Legacy drafts: preserve the old behaviour verbatim -
+                    # only real-world (fictional == false) entries get searched.
+                    search = character.get("search", ch)
+
+                do_search = bool(search) and (
+                    new_contract
+                    or str(character.get("fictional", False)).lower() == "false"
+                )
+                if do_search:
                     search_out = multi_google_search(
                         chatbot, [search], outdir=outdir, animate=False
                     )
@@ -1804,28 +2020,47 @@ def generate_video_data(
             elif data.get("cinematic"):
                 audio_timepoints = {}
 
-                for idx, c in enumerate(data["cinematic"]):
-                    if c["audio_type"] == "dialogue":
-                        speaker = c.get("speaker")
-                        text_line = story_lines[idx]
+                cinematic_entries = data["cinematic"]
+                has_dialogue = any(
+                    c.get("audio_type") == "dialogue" for c in cinematic_entries
+                )
+                if not has_dialogue:
+                    # Narration-only story: TTS the whole story as ONE audio file
+                    # split per sentence. The video renderer slices the full file
+                    # by these durations (matches text_to_speech_as_single_audio
+                    # format: [(full_url, dur0), ("1", dur1), ...]).
+                    (
+                        audios,
+                        audio_timepoints,
+                        _,
+                    ) = other_utils.text_to_speech_as_single_audio(
+                        story_lines,
+                        primary_voice_detail.id,
+                        primary_voice_detail.tts_toolkit,
+                    )
+                else:
+                    for idx, c in enumerate(cinematic_entries):
+                        if c["audio_type"] == "dialogue":
+                            speaker = c.get("speaker")
+                            text_line = story_lines[idx]
 
-                        v = (
-                            character_voice_detail_map.get(speaker)
-                            if character_voice_detail_map and speaker
-                            else None
-                        ) or primary_voice_detail
+                            v = (
+                                character_voice_detail_map.get(speaker)
+                                if character_voice_detail_map and speaker
+                                else None
+                            ) or primary_voice_detail
 
-                        (auds, tpoints, _) = other_utils.text_to_speech(
-                            [text_line],
-                            v.id,
-                            v.tts_toolkit,
-                            voice_description=getattr(v, "description", None),
-                        )
-                        audios = audios + auds
-                        audio_timepoints.update(tpoints)
-                    else:
-                        silence_dur: float = c["duration"]
-                        audios.append(("-1", silence_dur))
+                            (auds, tpoints, _) = other_utils.text_to_speech(
+                                [text_line],
+                                v.id,
+                                v.tts_toolkit,
+                                voice_description=getattr(v, "description", None),
+                            )
+                            audios = audios + auds
+                            audio_timepoints.update(tpoints)
+                        else:
+                            silence_dur: float = c["duration"]
+                            audios.append(("-1", silence_dur))
             else:
                 (
                     audios,
@@ -1901,10 +2136,14 @@ def generate_video_data(
 
                 data["images"] = image_urls
                 if image_urls and len(image_urls) > 0:
-                    focus_directions = image_search_agent.find_image_focus_direction(
+                    camera_moves = image_search_agent.find_image_focus_direction(
                         image_urls, chatbot
                     )
-                    data["image_focus_directions"] = focus_directions
+                    data["image_camera_moves"] = camera_moves
+                    data["image_focus_directions"] = [
+                        m.get("direction", "middle") if isinstance(m, dict) else "middle"
+                        for m in camera_moves
+                    ]
 
                 # data["final_image_prompts"] = image_prompts
                 # data["image_engine_map"] = image_engine_map
@@ -2076,6 +2315,100 @@ def get_search_queries_with_styling(chatbot, raw_sentences):
     return data["text_styling"], data["search_image"]
 
 
+def style_refs_contain_faces(chatbot, style_reference_urls, max_images=3) -> bool:
+    """Vision check: True if any style reference depicts a person/character."""
+    parts: List[Any] = []
+    for i, url in enumerate((style_reference_urls or [])[:max_images]):
+        try:
+            img_bytes = requests.get(url, timeout=30).content
+        except Exception as e:
+            logging.warning(f"style card face-check: failed to fetch {url}: {e}")
+            continue
+        parts.append(BaashaChat.Img(_bytes=img_bytes, text=f"Image {i + 1}"))
+
+    if not parts:
+        # Cannot verify -> assume contaminated so preprocessing still runs.
+        logging.warning("style card face-check: no refs downloadable; assuming faces")
+        return True
+
+    parts.append(
+        "Task: For EACH image above, does it depict any person, character, face, "
+        "figure or being (human, humanoid or animal)? Answer with exactly one line "
+        "per image: 'Image N: YES' or 'Image N: NO'."
+    )
+    response = chatbot.fetch_text(parts)
+    logging.info(f"style card face-check response: {response}")
+    return "YES" in (response or "").upper()
+
+
+def synthesize_faceless_style_card(
+    chatbot,
+    style_reference_urls,
+    image_config=None,
+    out_dir=None,
+    style_terms=None,
+) -> Optional[str]:
+    """
+    Pre-process user style references: if they depict characters, generate a
+    subject-free palette/texture sample board from them and return its URL.
+    Returns None when the refs are already face-free or synthesis fails
+    (caller falls back to the raw refs).
+    """
+    if not style_reference_urls:
+        return None
+
+    try:
+        if not style_refs_contain_faces(chatbot, style_reference_urls):
+            logging.info("style card: no characters detected in style refs; skip synthesis")
+            return None
+
+        logging.info(
+            f"style card: characters detected in style refs {style_reference_urls}; "
+            "synthesizing faceless style card"
+        )
+
+        gen_prompt = get_prompt_text("style-card-synthesis")
+        if style_terms:
+            gen_prompt += f"\nTarget palette and lighting to sample: {style_terms}"
+
+        card_config = dict(image_config or {})
+        card_config["aspect_ratio"] = "1:1"
+
+        style_ref_payload = [
+            [
+                {
+                    "url": s,
+                    "type": "style",
+                    "name": (
+                        "style source for palette, texture and lighting sampling ONLY. "
+                        "This reference depicts characters \u2014 the characters themselves "
+                        "MUST NOT appear in the output."
+                    ),
+                }
+            ]
+            for s in style_reference_urls[:3]
+        ]
+
+        urls, _, _, errors, logs = image_gen(
+            [gen_prompt],
+            style_ref_payload,
+            out_dir or "tmp",
+            card_config,
+            chatbot,
+        )
+        if errors:
+            logging.warning(f"style card synthesis errors: {errors}")
+        if urls and urls[0]:
+            logging.info(f"style card synthesized: {urls[0]}")
+            return urls[0]
+        logging.warning("style card synthesis produced no image; keeping raw style refs")
+        return None
+    except Exception as e:
+        # Fail-open: a broken pre-processor must not kill the draft pipeline.
+        logging.warning(f"style card synthesis failed; keeping raw style refs: {e}")
+        return None
+
+
 def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[str]:
     if not style_refs:
         return None
@@ -2097,11 +2430,15 @@ def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[st
             prompt = ""
             if is_last:
                 prompt = (
-                    "Analyze the shared artistic visual style across these reference images. "
-                    "Describe their core photographic medium, aesthetic style, color temperature, "
-                    "lighting warmth/coolness, and film grain in 3 to 7 highly descriptive, "
-                    "comma-separated natural English terms (e.g., 'gritty documentary photograph, warm retro film tones, deep shadows, authentic analog grain'). "
-                    "Return ONLY the comma-separated style terms. Do not add any introductory text, prefix, markdown, or punctuation outside the terms."
+                    "Analyze the artistic visual style of this reference image. "
+                    "Describe the core medium, brushwork or photographic technique, "
+                    "AND both the warm highlight tones AND the cool shadow/ambient tones used for contrast. "
+                    "Return 5 to 9 highly specific comma-separated style terms that fully describe "
+                    "both the warm accents AND the complementary cool shadows "
+                    "(e.g., 'classical oil painting on fine canvas, impasto warm amber highlights, "
+                    "deep indigo shadow contrast, Rembrandtesque chiaroscuro, jewel-toned silk pigments, "
+                    "cool ambient dusk tones'). "
+                    "Return ONLY the comma-separated terms. No prefix, no markdown, no introductory text."
                 )
             chat_parts.append(Img(_bytes=img_bytes, text=prompt))
 
@@ -2115,6 +2452,56 @@ def extract_style_from_references(chatbot, style_refs: list[str]) -> Optional[st
     return None
 
 
+_STORY_PART_PATTERN = re.compile(
+    r"\b(?:PART|EPISODE|CHAPTER)[\s\-\u2013\u2014]*"
+    r"(?:\d{1,2}|[IVXLCDM]{1,5}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b",
+    re.IGNORECASE,
+)
+
+
+def count_story_parts(raw_text):
+    if not raw_text:
+        return 0
+    found = set()
+    for match in _STORY_PART_PATTERN.finditer(raw_text):
+        found.add(" ".join(match.group(0).lower().split()))
+    return len(found)
+
+
+def build_runtime_budget_instruction(raw_text, target_duration=None):
+    total = target_duration
+    parts = count_story_parts(raw_text)
+    if (total is None or total <= 0) and parts >= 2:
+        total = 60.0 * parts
+    if not total or total <= 0:
+        return None
+    lines = [
+        "RUNTIME & RESOLUTION BUDGET (DIRECTION, NOT A STRAITJACKET):",
+        f"- The 'duration' values of ALL shots combined must total approximately "
+        f"{int(round(total))} seconds (within 10%). Do NOT compress the story "
+        f"into a fraction of this runtime.",
+        "- Distribute that runtime intelligently across the story in proportion "
+        "to each beat's narrative weight and action density \u2014 nothing about shot "
+        "count or length per scene is fixed. Shorten quiet, static beats; let "
+        "dense, consequential action breathe across more shots and deeper shot "
+        "progression. You decide the breakdown; the only fixed rule is total "
+        "runtime and full coverage.",
+    ]
+    if parts >= 2:
+        lines.append(
+            f"- The input contains {parts} labeled parts/chapters "
+            f"(PART/EPISODE/CHAPTER headings). Each part MUST be covered by its "
+            f"own dedicated block of shots, in the exact order the parts appear "
+            f"in the input. Size each part's block by its narrative content "
+            f"(~{int(round(total / parts))} seconds per part is only a starting "
+            f"point: give action-dense parts more shots and more time, and give "
+            f"sparse parts fewer, held shots \u2014 but never merge parts, never skip a "
+            f"part's narrative beats, and never represent a whole part with a "
+            f"single shot)."
+        )
+    return "\n".join(lines)
+
+
 def split_text_into_sentences_with_styling(
     chatbot,
     raw_text,
@@ -2123,6 +2510,7 @@ def split_text_into_sentences_with_styling(
     character_names=None,
     style_refs=None,
     prompt_overrides=None,
+    target_duration=None,
 ):
     is_story = content_type == "reel"
 
@@ -2151,18 +2539,87 @@ def split_text_into_sentences_with_styling(
         )
         quest = quest + char_instruction
 
-    if image_styles:
+    if image_styles and not style_refs:
+        # Only inject text-based style constraint when there is NO visual style reference image.
+        # When style_refs is present, the reference image itself carries the style signal —
+        # injecting text descriptions on top causes token stacking and severe color cast (over-warm/sepia).
         style_text = (
             image_styles.to_text()
             if hasattr(image_styles, "to_text")
             else str(image_styles)
         )
-        logging.info(f"image styles: {style_text}")
+        logging.info(f"image styles (text injection, no visual ref): {style_text}")
         quest += f"\n\nCRITICAL VISUAL CONSTRAINT: The user has explicitly requested the following visual styles, themes, and camera aesthetics: '{style_text}'. Ensure ALL generated image descriptions strictly align with this style request. If the requested style implies a non-realistic medium (e.g., Anime, Painting, Sketch), prioritize the requested medium over the 'realistic' default mentioned in the spec."
+    elif image_styles and style_refs:
+        logging.info(
+            "image styles: visual style_refs present — skipping text style injection "
+            "to prevent warm-tone token stacking and color cast"
+        )
 
-    output = generate_data(chatbot, prompt_key, quest)
-    res = markdown_parse(output, lang="json")
-    j = json.loads(res)
+    runtime_budget = build_runtime_budget_instruction(raw_text, target_duration)
+    if runtime_budget:
+        logging.info("runtime budget injected: %s", runtime_budget)
+        quest += "\n\n" + runtime_budget
+
+    output = None
+    res = None
+    j = None
+    for attempt in range(3):
+        try:
+            output = generate_data(chatbot, prompt_key, quest)
+            res = markdown_parse(output, lang="json") if output else None
+            j = json.loads(res) if res else None
+            if j:
+                break
+            raise ValueError("empty split-and-styling output")
+        except Exception as e:
+            # Salvage: reasoning models frequently drop commas / trailing
+            # separators inside the JSON array. Repair the structure instead
+            # of burning the attempt (or falling back to naive panels).
+            if res:
+                try:
+                    from json_repair import repair_json
+
+                    j = json.loads(repair_json(res))
+                    if j:
+                        logging.info(
+                            "split-and-styling attempt %d/3 salvaged via json_repair",
+                            attempt + 1,
+                        )
+                        break
+                except Exception:
+                    pass
+            logging.warning(f"split-and-styling attempt {attempt + 1}/3 failed: {e}")
+            j = None
+            time.sleep(4 * (attempt + 1))
+    if not isinstance(j, (dict, list)):
+        # LLM outage safety net: keep the draft alive with one shot per
+        # sentence (no styling) instead of crashing the pipeline.
+        logging.error(
+            "split-and-styling failed all attempts; using naive sentence fallback"
+        )
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_text) if s.strip()]
+        if not sentences:
+            sentences = [raw_text.strip()]
+        j = [
+            {
+                "sentence": s,
+                "text_styling": s,
+                "image_source": s,
+                "image_description": s,
+                "motion_prompt": "",
+                "state_transition_prompt": "",
+                "audio_type": "narration",
+                "duration": None,
+                "speaker": None,
+                "shot_type": None,
+                "transition": None,
+                "location_id": None,
+                "relative_prior_shot_index": None,
+                "location_edits": "",
+            }
+            for s in sentences
+        ]
 
     data: Dict[str, list] = {
         "text": [],
@@ -2173,6 +2630,56 @@ def split_text_into_sentences_with_styling(
     }
 
     shots = j.get("shots", []) if isinstance(j, dict) and "shots" in j else j
+    if isinstance(shots, str):
+        shots = [shots]
+    elif isinstance(shots, dict):
+        list_vals = [v for v in shots.values() if isinstance(v, list)]
+        shots = list_vals[0] if list_vals else [shots]
+    shots = [
+        {
+            "sentence": o,
+            "image_source": o,
+            "image_description": o,
+            "text_styling": o,
+        }
+        if isinstance(o, str)
+        else o
+        for o in (shots or [])
+    ]
+
+    def _fill_shot(o):
+        if not isinstance(o, dict):
+            return None
+        sentence = str(
+            o.get("sentence")
+            or o.get("text")
+            or o.get("text_styling")
+            or o.get("image_description")
+            or o.get("description")
+            or ""
+        ).strip()
+        if not sentence:
+            return None
+        o = dict(o)
+        o["sentence"] = sentence
+        for k in ("image_source", "image_description", "text_styling"):
+            if not str(o.get(k) or "").strip():
+                o[k] = sentence
+        return o
+
+    shots = [s for s in (_fill_shot(o) for o in shots) if s]
+    if not shots:
+        logging.error("split-and-styling produced no usable shots; naive fallback")
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_text) if s.strip()]
+        shots = [
+            {
+                "sentence": s,
+                "image_source": s,
+                "image_description": s,
+                "text_styling": s,
+            }
+            for s in (sentences or [raw_text.strip()])
+        ]
     set_registry = j.get("set_registry", {}) if isinstance(j, dict) else {}
 
     location_last_panel: Dict[str, int] = {}
@@ -2184,12 +2691,20 @@ def split_text_into_sentences_with_styling(
         data["text_styling"].append(o.get("text_styling") if is_story else None)
 
         src = o.get("image_source") if is_story else o.get("image_description")
+        if not isinstance(src, str) or not src.strip():
+            src = o.get("sentence") or o.get("image_description") or ""
 
         motion_prompt = o.get("motion_prompt")
         prev_motion = o.get("state_transition_prompt")
 
         if prev_motion and motion_prompt:
-            motion_prompt = f"start: {prev_motion}, end: {motion_prompt}"
+            combined = f"start: {prev_motion}, end: {motion_prompt}"
+            # Respect the short-prompt budget for i2v conditioning: a bloated
+            # "start:..., end:..." dilutes attention. Prefer the end-state
+            # (current shot) prompt whenever the combined form exceeds budget.
+            motion_prompt = combined if len(combined) <= 400 else motion_prompt
+        elif prev_motion:
+            motion_prompt = prev_motion
 
         if o.get("audio_type") == "dialogue" and motion_prompt:
             motion_prompt = f"{motion_prompt}, dialogue: {sentence}"
@@ -2362,7 +2877,33 @@ def multi_google_search(
     return results
 
 
-def get_img_crops(url, boxes, outdir, target_dim=1000):
+def get_equi_spaced_grid_boxes(num_panels=4, target_dim=1000):
+    """
+    Returns default equi-sized panel bounding boxes normalized to target_dim.
+    For a 2x2 grid (4 panels):
+      Panel 0: Top-Left [0, 0, mid, mid]
+      Panel 1: Top-Right [0, mid, mid, target_dim]
+      Panel 2: Bottom-Left [mid, 0, target_dim, mid]
+      Panel 3: Bottom-Right [mid, mid, target_dim, target_dim]
+    """
+    if num_panels == 4:
+        mid = target_dim // 2
+        return [
+            {"box_2d": [0, 0, mid, mid]},
+            {"box_2d": [0, mid, mid, target_dim]},
+            {"box_2d": [mid, 0, target_dim, mid]},
+            {"box_2d": [mid, mid, target_dim, target_dim]},
+        ]
+    elif num_panels == 2:
+        mid = target_dim // 2
+        return [
+            {"box_2d": [0, 0, target_dim, mid]},
+            {"box_2d": [0, mid, target_dim, target_dim]},
+        ]
+    return [{"box_2d": [0, 0, target_dim, target_dim]}]
+
+
+def get_img_crops(url, boxes, outdir, target_dim=1000, fallback_num_panels=None):
     # 1. Fetch image from URL
     response = requests.get(url, stream=True)
     if response.status_code != 200:
@@ -2378,16 +2919,30 @@ def get_img_crops(url, boxes, outdir, target_dim=1000):
     # 3. Rescale full image to 1000x1000
     rescaled_img = cv2.resize(img, (target_dim, target_dim))
 
-    x_ratio, y_ratio = 1, 1
     prefix = uuid4()
     crops = []
 
-    for i, val in enumerate(boxes):
-        box = val.get("box_2d")
-        ymin = int(box[0])
-        xmin = int(box[1])
-        ymax = int(box[2])
-        xmax = int(box[3])
+    if not boxes and fallback_num_panels:
+        boxes = get_equi_spaced_grid_boxes(fallback_num_panels, target_dim=target_dim)
+
+    for i, val in enumerate(boxes or []):
+        if isinstance(val, dict):
+            box = val.get("box_2d", val.get("box", []))
+        elif isinstance(val, (list, tuple)):
+            box = val
+        else:
+            continue
+
+        if not box or len(box) < 4:
+            continue
+
+        ymin = max(0, min(target_dim, int(box[0])))
+        xmin = max(0, min(target_dim, int(box[1])))
+        ymax = max(0, min(target_dim, int(box[2])))
+        xmax = max(0, min(target_dim, int(box[3])))
+
+        if ymax <= ymin or xmax <= xmin:
+            continue
 
         # 5. Crop from the rescaled image
         cropped_img = rescaled_img[ymin:ymax, xmin:xmax]
@@ -2395,7 +2950,64 @@ def get_img_crops(url, boxes, outdir, target_dim=1000):
         cv2.imwrite(p, cropped_img)
         crops.append(p)
 
+    if (not crops or (fallback_num_panels and len(crops) != fallback_num_panels)) and fallback_num_panels:
+        logging.info(
+            f"Bbox extraction returned {len(crops)} crops (expected {fallback_num_panels}). Defaulting to equi-sized square panels."
+        )
+        eq_boxes = get_equi_spaced_grid_boxes(fallback_num_panels, target_dim=target_dim)
+        eq_crops = []
+        for i, val in enumerate(eq_boxes):
+            box = val["box_2d"]
+            cropped_img = rescaled_img[box[0]:box[2], box[1]:box[3]]
+            p = os.path.join(outdir, f"{prefix}_eq_crop_{i}.png")
+            cv2.imwrite(p, cropped_img)
+            eq_crops.append(p)
+        return eq_crops
+
     return crops
+
+
+def montage_preview_urls(preview_urls, outdir, cols=2):
+    """Tile scene preview PNGs into one grid image (judge-compatible)."""
+    import io as _io
+
+    from PIL import Image
+
+    from uuid import uuid4 as _uuid4
+
+    imgs = []
+    for u in preview_urls:
+        if not u:
+            continue
+        try:
+            r = requests.get(u, timeout=30)
+            r.raise_for_status()
+            imgs.append(Image.open(_io.BytesIO(r.content)).convert("RGB"))
+        except Exception as e:
+            logging.error(f"montage fetch failed {u}: {e}")
+    if not imgs:
+        return None
+    w = max(im.width for im in imgs)
+    h = max(im.height for im in imgs)
+    cols = max(1, min(cols, len(imgs)))
+    rows = (len(imgs) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * w, rows * h), "#111111")
+    for i, im in enumerate(imgs):
+        r, c = divmod(i, cols)
+        x = c * w + (w - im.width) // 2
+        y = r * h + (h - im.height) // 2
+        sheet.paste(im, (x, y))
+    buf = _io.BytesIO()
+    sheet.save(buf, format="JPEG", quality=88)
+    path = f"/tmp/{_uuid4()}.jpg"
+    with open(path, "wb") as f:
+        f.write(buf.getvalue())
+    return object_storage.upload_file(
+        object_storage.ASSETS_IMG_BUCKET,
+        path,
+        f"lottie-grid-{_uuid4().hex[:8]}.jpg",
+        object_storage.ACL_PUBLIC,
+    )
 
 
 @errors.propogate_ctx_errors
@@ -2412,10 +3024,52 @@ def create_image_grid(
     story_context: str = "",
     skip_splitting=False,
     prompt_overrides=None,
+    visual_engine: str = "image",
+    character_list: Optional[List[dict]] = None,
+    lottie_entries_out: Optional[List[dict]] = None,
+    lottie_outdir: Optional[str] = None,
+    existing_lottie_scenes: Optional[List[dict]] = None,
 ):
     """
     Generates a storyboard grid and optionally performs autonomous refinement passes.
     """
+    if str(visual_engine).startswith("lottie"):
+        chars = character_list or []
+        if not chars and character_refs:
+            chars = [
+                {"name": c.get("name", ""), "url": c.get("url")}
+                for c in character_refs
+                if c.get("type") == "character" or not c.get("type")
+            ]
+        routing_cfg = app_config.get().get("chatbot_codegen")
+        scene_chatbot = chatbot
+        if routing_cfg and str(routing_cfg).strip():
+            try:
+                scene_chatbot = BaashaChat.ChatInterface(str(routing_cfg).strip())
+            except Exception as e:
+                logging.warning(
+                    "lottie: scene codegen chatbot chain failed to load (%s); "
+                    "falling back to primary chain",
+                    e,
+                )
+        entries = lottie_assets.compose_scene_lottie(
+            scene_chatbot,
+            list(prompts),
+            chars,
+            existing_scenes=existing_lottie_scenes,
+            width=int(image_config.get("width") or 1080),
+            height=int(image_config.get("height") or 1920),
+            outdir=lottie_outdir or f"lottie/{os.path.basename(str(outdir).rstrip('/'))}",
+        )
+        if lottie_entries_out is not None:
+            lottie_entries_out.extend(entries or [])
+        preview_urls = [e.get("url") for e in entries if e and e.get("url")]
+        montage_url = montage_preview_urls(preview_urls, outdir) if preview_urls else None
+        grid_prompt = "lottie-scene-compose"
+        if not preview_urls:
+            return None, "No lottie scenes generated", [], grid_prompt
+        return (montage_url or preview_urls[0], preview_urls, preview_urls, grid_prompt)
+
     prompts_desp = "\n".join(
         [f"Panel {index+1}: {item}" for index, item in enumerate(prompts)]
     )
@@ -2430,22 +3084,15 @@ def create_image_grid(
 
     if style_refs:
         total_refs.extend(style_refs)
-        # Priority 1: Use Style Reference Grounding
-        grid_prompt += "\nFollow the style reference for the visual art style, colors, lighting, and overall aesthetic of the provided style reference strictly across all panels."
-
-        # Globally append the extracted visual style terms as a clean semantic anchor
+        # Priority 1: Use Style Reference Grounding via the visual reference image.
+        # The reference image carries the full style signal. We intentionally do NOT
+        # append the extracted style text here, because duplicating warm/lighting tokens
+        # in text causes severe color stacking (over-warm / sepia cast) in diffusion models.
+        grid_prompt += "\nFollow the style reference image strictly for the visual art style, color palette, lighting mood, texture, and overall aesthetic across all panels."
         if image_styles:
-            style_text = (
-                image_styles.to_text()
-                if hasattr(image_styles, "to_text")
-                else (
-                    ", ".join(image_styles)
-                    if isinstance(image_styles, list)
-                    else str(image_styles)
-                )
-            )
-            grid_prompt += (
-                f"\nGlobal Visual Style Constraint (Semantic Anchor): '{style_text}'"
+            logging.info(
+                "create_image_grid: style_refs present — suppressing text style anchor "
+                "to prevent warm-tone token stacking"
             )
     elif image_styles:
         # Priority 2: Use generic text-based stylization only if no visual reference exists
@@ -2471,31 +3118,61 @@ def create_image_grid(
     url = urls[0]
     raw_grids = []
 
-    # Perform Autonomous Refinement Passes if requested
+    # One initial audit/refinement, followed by one verification audit only.
     if refine_grid_count and refine_grid_count > 0:
-        logging.info(
-            f"Triggering {refine_grid_count} Autonomous Refinement Pass(es)..."
+        logging.info("Triggering one grid audit/refinement pass...")
+        original_url = url
+        refined_url, report = refine_and_fix_grid(
+            chatbot,
+            url,
+            style_refs,
+            story_context,
+            prompts,
+            character_refs,
+            image_config,
+            grid_guidance,
+            outdir,
+            prompt_overrides=prompt_overrides,
         )
-        for i in range(refine_grid_count):
-            refined_urls, report = refine_and_fix_grid(
-                chatbot,
-                url,
-                style_refs,
-                story_context,
-                prompts,
-                character_refs,
-                image_config,
-                grid_guidance,
-                outdir,
-                prompt_overrides=prompt_overrides,
+        if refined_url and refined_url != original_url:
+            raw_grids.append(original_url)
+            url = refined_url
+            logging.info("Grid refinement generated candidate: %s", url)
+
+            verification_refs = [
+                {
+                    "url": ref["url"],
+                    "desp": ref.get("desp") or ref.get("name") or "visual reference",
+                }
+                for ref in (style_refs or [])
+                if isinstance(ref, dict) and ref.get("url")
+            ]
+            verification = judge_image_grid(
+                url, verification_refs, story_context, prompts, character_refs,
+                chatbot, prompt_overrides=prompt_overrides
             )
-            if refined_urls and len(refined_urls) > 0:
-                raw_grids.append(url)
-                url = refined_urls
-                logging.info(f"Refinement Pass {i+1} complete. URL : {url}")
-            else:
-                logging.info(f"Refinement Pass {i+1} resulted in no change or failed.")
-                break
+            failed_panels = [
+                {
+                    "panel_index": panel.get("panel_index"),
+                    "issue": panel.get("issue"),
+                    "details": panel.get("details"),
+                }
+                for panel in (verification.get("panels") or [])
+                if isinstance(panel, dict)
+                and str(panel.get("status", "")).upper() == "FAIL"
+            ]
+            logging.info(
+                "Grid verification complete: score=%s failed_panels=%s critique=%s",
+                verification.get("consistency_score"),
+                failed_panels,
+                verification.get("holistic_critique"),
+            )
+        else:
+            logging.info(
+                "Grid refinement made no change; initial audit score=%s critique=%s",
+                report.get("consistency_score"),
+                report.get("holistic_critique"),
+            )
 
     if skip_splitting:
         return (url, None, raw_grids, grid_prompt)
@@ -2514,9 +3191,9 @@ def create_image_grid(
         grid_json = json.loads(markdown_parse(output))
     except Exception as e:
         logging.error(f"Failed to parse bbox json: {e} | Output: {output}")
-        return (url, [], raw_grids, grid_prompt)
+        grid_json = None
 
-    crops = get_img_crops(url, grid_json, outdir, target_dim=1000)
+    crops = get_img_crops(url, grid_json, outdir, target_dim=1000, fallback_num_panels=len(prompts))
 
     return (url, crops, raw_grids, grid_prompt)
 
@@ -2557,7 +3234,32 @@ def judge_image_grid(
     )
     char_text = json.dumps(character_list)
 
-    prompt = get_prompt_text("holistic-grid-judge", overrides=prompt_overrides).format(
+    judge_prompt = get_prompt_text(
+        "holistic-grid-judge", overrides=prompt_overrides
+    )
+    hardening = """
+
+### Mandatory Deal-Breaker Checks (Fail Closed)
+- Audit each panel individually at full available detail. Do not pass a panel merely because its main subject looks plausible; inspect every visible person, including small background figures, hands, faces, limbs, and silhouettes. Distinguish intentional depth-of-field blur from accidental smeared, malformed, or unreadable generated anatomy. Flag noticeable background defects just as firmly as foreground defects.
+- Treat the ordered panel descriptions as a continuity ledger. Track each named character's face, skin tone, hair, body, costume, accessories, and current story state from panel to panel. A wardrobe or appearance change is valid only when the descriptions or story explicitly establish the change before or in that panel. Do not excuse a sudden change just because each individual panel looks attractive.
+- Check transitions between adjacent panels, especially at chunk boundaries. For every appearance, verify the character is the right person and carries forward the immediately prior state unless the narrative explicitly changes it.
+- For characters with a specified exact count of body parts or heads, count what is visibly present. In particular, a ten-headed Ravana depiction must show exactly ten distinct heads total, not an approximate fan, merged faces, or extra/missing heads. Treat incorrect counts as critical failures.
+- Check story chronology, not just prompt obedience. A panel can be visually well-formed and still fail if it reveals a transformation, identity, power, or climax earlier than the story establishes it. Compare the sequence and script context; flag an out-of-order reveal even if a panel prompt appears to request it, and explain the chronology conflict.
+- Inspect background crowds and extras for duplicated faces/poses, malformed bodies, fused or extra limbs, impossible joints, inconsistent scale, and excessive blur. Flag clear defects; do not waive them because the figures are secondary.
+- Treat unrequested text, logos, watermarks, and UI-like marks as failures. Requested title cards or diegetic text are allowed only when the corresponding panel description explicitly asks for them, and the rendered wording must match.
+- Do not award a passing score of 90 or higher if any critical continuity, chronology, exact-count, anatomy, or format issue is present. If a detail cannot be inspected confidently, report it as uncertain rather than silently marking it PASS.
+
+The JSON panel indices are one-based positions within the supplied grid, in reading order (left-to-right, top-to-bottom). Return a FAIL entry for every issue that needs correction, with a precise directive and unchanged elements. The holistic critique must clearly state any unresolved issue.
+"""
+    output_marker = "### Output Format"
+    if output_marker in judge_prompt:
+        judge_prompt = judge_prompt.replace(
+            output_marker, hardening + "\n" + output_marker, 1
+        )
+    else:
+        judge_prompt += hardening
+
+    prompt = judge_prompt.format(
         STORY_CONTEXT=story_context or "Refer to the context provided for grounding",
         PANEL_DESCRIPTIONS=panel_text,
         CHARACTER_LIST=char_text,
@@ -2566,8 +3268,35 @@ def judge_image_grid(
     prompts = []
     if grid_refs:
         for r in grid_refs:
-            grid_ref = mk_chatbot_img_prompt(r["url"], r["desp"])
+            if not isinstance(r, dict) or not r.get("url"):
+                continue
+            grid_ref = mk_chatbot_img_prompt(
+                r["url"], r.get("desp") or r.get("name") or "visual reference"
+            )
             prompts.append(grid_ref)
+
+    seen_character_refs = set()
+    panel_text_lower = panel_text.casefold()
+    for character in character_list or []:
+        if not isinstance(character, dict):
+            continue
+        name = str(character.get("name") or "")
+        ref_url = character.get("url")
+        if (
+            not name
+            or not ref_url
+            or name.casefold() not in panel_text_lower
+            or name.casefold().startswith(("story-grid-", "other-grid-", "crop-"))
+            or ref_url in seen_character_refs
+        ):
+            continue
+        seen_character_refs.add(ref_url)
+        prompts.append(
+            mk_chatbot_img_prompt(
+                ref_url,
+                f"Character identity reference for {name}. Use only to compare this character's visual identity.",
+            )
+        )
 
     grid_img = mk_chatbot_img_prompt(grid_url, prompt)
     prompts.append(grid_img)
@@ -2607,9 +3336,11 @@ def refine_and_fix_grid(
     Consolidated Batch Refinement: Prompts all fixes together in a single pass.
     Uses the original grid as a subject reference to anchor the evolution.
     """
-    grid_refinement_refs = list(
-        map(lambda x: {"url": x["url"], "desp": x.get("name", "style ref")}, grid_refs)
-    )
+    grid_refinement_refs = [
+        {"url": ref["url"], "desp": ref.get("name", "style ref")}
+        for ref in (grid_refs or [])
+        if isinstance(ref, dict) and ref.get("url")
+    ]
     report = judge_image_grid(
         grid_url,
         grid_refinement_refs,
@@ -2630,19 +3361,22 @@ def refine_and_fix_grid(
     )
 
     # 2. Consolidate ALL fixes into a Master List
-    failed_panels = [p for p in report.get("panels", []) if p["status"] == "FAIL"]
-
-    if not failed_panels:
-        return grid_url, report
-
     fix_list_text = ""
-    for fp in failed_panels:
-        idx = fp["panel_index"]
-        directive = fp["fix_directive"]
+    for fp in (report.get("panels") or []):
+        if not isinstance(fp, dict) or str(fp.get("status", "")).upper() != "FAIL":
+            continue
+        idx = fp.get("panel_index")
+        directive = fp.get("fix_directive")
+        if idx is None or not directive:
+            logging.warning("Judge marked a panel failed without a usable fix: %s", fp)
+            continue
         unchanged = fp.get("unchanged_elements", "")
         fix_list_text += f"- Panel {idx}:\n  FIX: {directive}\n"
         if unchanged:
             fix_list_text += f"  DO NOT CHANGE: {unchanged}\n"
+
+    if not fix_list_text:
+        return grid_url, report
 
     # 3. Construct the Batch Refinement Prompt
     batch_refine_prompt = get_prompt_text("grid-refinement-v2").format(

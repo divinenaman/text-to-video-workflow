@@ -38,6 +38,17 @@ def markdown_parse(a, lang="json"):
             if e != -1:
                 return a[s:e]
 
+        if is_json and a:
+            # Plain JSON without fences (common with OpenAI-compatible free
+            # providers): slice from the first opening brace/bracket to the
+            # last closing one, ignoring any surrounding prose.
+            t = a.strip()
+            for ob, cb in (("{", "}"), ("[", "]")):
+                i = t.find(ob)
+                j = t.rfind(cb)
+                if i != -1 and j > i:
+                    return t[i : j + 1]
+
         return None
     except:
         return None

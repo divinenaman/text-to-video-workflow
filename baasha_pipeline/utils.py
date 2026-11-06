@@ -202,8 +202,11 @@ def text_to_speech(
         try:
             output = chatbot.fetch_text(spellout_prompt + tt)
             parsed_out = json.loads(markdown_parse(output))
-            if parsed_out.get("script"):
-                t = parsed_out.get("script")
+            script = parsed_out.get("script") if isinstance(parsed_out, dict) else None
+            # Reject partial rewrites (flaky LLMs have returned only the first
+            # sentence) - they would silently produce truncated audio.
+            if script and len(script) >= int(0.6 * len(tt)):
+                t = script
         except Exception:
             pass
 

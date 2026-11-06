@@ -62,7 +62,13 @@ def generate_image(
                         name = ref.get("name")
 
                     if ref_type == "style":
-                        desp = "\n[Style/Aesthetic Reference]:"
+                        desp = (
+                            "\n[Style/Aesthetic Reference]:\n"
+                            "This reference may itself depict a person, face, or character. "
+                            "That depicted subject MUST NOT appear in the output. Reproduce "
+                            "ONLY its aesthetic: color grading, lighting, texture, and "
+                            "rendering style."
+                        )
                     elif ref_type == "scene":
                         desp = "\n[Scene Reference]:"
                     else:

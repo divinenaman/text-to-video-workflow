@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Baasha Lottie Player</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.13.0/lottie.min.js"></script>
+  <style>
+    body { margin: 0; background: #111; color: #eee; font-family: system-ui, sans-serif;
+           display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    h1 { font-size: 16px; font-weight: 500; opacity: 0.7; }
+    #player { width: min(90vw, 405px); height: min(80vh, 720px); background: #000; border-radius: 8px; }
+    .bar { display: flex; gap: 8px; align-items: center; margin: 12px; }
+    button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
+    input[type=range] { width: 220px; }
+    #err { color: #f66; max-width: 480px; white-space: pre-wrap; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Baasha Lottie Player</h1>
+  <div id="player"></div>
+  <div class="bar">
+    <button id="play">Play</button>
+    <button id="pause">Pause</button>
+    <button id="restart">Restart</button>
+    <input id="scrub" type="range" min="0" max="1000" value="0">
+    <span id="label">—</span>
+  </div>
+  <div id="err"></div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const url = params.get("url");
+    const errEl = document.getElementById("err");
+    if (!url) {
+      errEl.textContent = "Missing ?url= parameter pointing at a Lottie JSON file.";
+    } else {
+      fetch(url)
+        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status + " fetching " + url); return r.json(); })
+        .then(data => {
+          const anim = lottie.loadAnimation({
+            container: document.getElementById("player"),
+            renderer: "svg",
+            loop: params.get("loop") !== "0",
+            autoplay: params.get("autoplay") !== "0",
+            animationData: data
+          });
+          window.__anim = anim;
+          const scrub = document.getElementById("scrub");
+          const label = document.getElementById("label");
+          anim.addEventListener("enterFrame", () => {
+            scrub.value = String(Math.round(anim.currentFrame / Math.max(anim.totalFrames - 1, 1) * 1000));
+            label.textContent = anim.currentFrame.toFixed(0) + " / " + anim.totalFrames;
+          });
+          scrub.addEventListener("input", () => {
+            anim.goToAndStop(Math.round(scrub.value / 1000 * (anim.totalFrames - 1)), true);
+          });
+          document.getElementById("play").onclick = () => anim.play();
+          document.getElementById("pause").onclick = () => anim.pause();
+          document.getElementById("restart").onclick = () => anim.goAndPlay(0, true);
+        })
+        .catch(e => { errEl.textContent = String(e); });
+    }
+  </script>
+</body>
+</html>

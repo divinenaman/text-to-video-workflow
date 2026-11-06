@@ -48,7 +48,22 @@ def create_dialogue(text, key):
     return response.json().get("enhanced_blocks")[0]
 
 
-@errors.log_ctx_errors
+def _response_field(response, name):
+    if isinstance(response, dict):
+        return response.get(name)
+
+    value = getattr(response, name, None)
+    if value is not None:
+        return value
+
+    # Recent ElevenLabs SDK versions expose this aliased field with an
+    # underscore between "base" and "64" on the Python model.
+    if name == "audio_base64":
+        return getattr(response, "audio_base_64", None)
+    return None
+
+
+@errors.raise_ctx_errors
 def tts(text, filename, model_version="eleven_labs", voice=VOICES["default"]):
     key = get_key()
     enhanced = None
@@ -76,25 +91,23 @@ def tts(text, filename, model_version="eleven_labs", voice=VOICES["default"]):
 
     # res = client.generate(text=text, voice=voice, model="eleven_multilingual_v2")
 
-    audio = res.get("audio_base64", "")
+    audio = _response_field(res, "audio_base64")
+    if not audio:
+        raise ValueError("ElevenLabs response did not contain audio data")
 
     audio_bytes = base64.b64decode(audio)
-
-    # with open(filename, "wb") as f:
-    #    f.write(audio_bytes)
-
     save(audio=audio_bytes, filename=filename)
 
     if not enhanced:
-        align = res.get("alignment")
+        align = _response_field(res, "alignment")
         if align:
-            characters = align.get("characters")
-            start = align.get("character_start_times_seconds")
-            end = align.get("character_end_times_seconds")
+            characters = _response_field(align, "characters")
+            start = _response_field(align, "character_start_times_seconds")
+            end = _response_field(align, "character_end_times_seconds")
 
             timepoints = []
             idx = -1
-            for i, c in enumerate(characters):
+            for i, c in enumerate(characters or []):
                 if c == " ":
                     st = start[idx + 1]
                     e = end[i - 1]

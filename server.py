@@ -9,13 +9,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc, inspect, func
 from flask_restful import Resource, Api, marshal_with, abort
 from flask import Flask, jsonify, send_from_directory, request
+from werkzeug.exceptions import HTTPException
 from elevenlabs.client import ElevenLabs
 import requests
+import subprocess
 from flask_restful.reqparse import RequestParser
 from flask_restful import reqparse
 import time
 import os
 import multiprocessing
+import sys
+import threading
 import uuid
 import redis
 import logging
@@ -93,6 +97,7 @@ from processor import (
     to_style_data,
 )
 import test as T
+from baasha_pipeline import lottie_assets as lottie_assets_mod
 
 import json
 from baasha_pipeline.configs import app_config as baasha_pipeline_config
@@ -232,6 +237,12 @@ def load_prod_env(app):
     baasha_pipeline_config.set("coqui_server", tts_service["COQUI"])
     baasha_pipeline_config.set("primary_chatbot", config["PREFS"]["PRIMARY_CHATBOT"])
     baasha_pipeline_config.set(
+        "chatbot_codegen", config["PREFS"].get("CHATBOT_CODEGEN", "")
+    )
+    baasha_pipeline_config.set(
+        "chatbot_judge", config["PREFS"].get("CHATBOT_JUDGE", "")
+    )
+    baasha_pipeline_config.set(
         "image_engine", config.get("MODELS", "IMAGE_ENGINE", fallback="cf_flux")
     )
     baasha_pipeline_config.set(
@@ -258,8 +269,14 @@ def load_prod_env(app):
     with open(os.path.join(token_dir, "linode_object_storage.json")) as f:
         baasha_pipeline_auth_config["object_storage"] = json.load(f)
 
-    with open(os.path.join(token_dir, "aws_render.json")) as f:
-        render_service_creds = json.load(f)
+    # Some local/dev setups do not have valid Lambda credentials; keep the
+    # render pipeline usable by falling back to the local FFmpeg path when the
+    # configured credentials are missing or incompatible.
+    try:
+        with open(os.path.join(token_dir, "aws_render.json")) as f:
+            render_service_creds = json.load(f)
+    except Exception:
+        render_service_creds = {}
 
     baasha_pipeline_auth_config["playgroundAI_cookie"] = os.path.join(
         token_dir, "playgroundAI.json"
@@ -287,12 +304,16 @@ def load_prod_env(app):
         for k in config["SECRETS"].get("OPENROUTER_KEY", "").split(",")
         if k.strip()
     ]
-    baasha_pipeline_auth_config["cloudflare_token"] = (
-        config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").strip()
-    )
-    baasha_pipeline_auth_config["cloudflare_account_id"] = (
-        config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-    )
+    baasha_pipeline_auth_config["cloudflare_token"] = [
+        k.strip()
+        for k in config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").split(",")
+        if k.strip()
+    ]
+    baasha_pipeline_auth_config["cloudflare_account_id"] = [
+        k.strip()
+        for k in config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").split(",")
+        if k.strip()
+    ]
     baasha_pipeline_auth_config["pollinations_key"] = (
         config["SECRETS"].get("POLLINATIONS_KEY", "").strip()
     )
@@ -318,7 +339,7 @@ def load_prod_env(app):
     """
     baasha_pipeline_config.set("global_chatbot_ctx", global_ctx)
 
-    logger.info(baasha_pipeline_config.get())
+    logger.info("Baasha pipeline configuration loaded")
 
 
 def extract_and_upload_last_frame(video_url):
@@ -525,6 +546,132 @@ class DraftResource(Resource):
         return live_patch
 
     @staticmethod
+    def resolve_character_voices(
+        db_session, character_list, video_data, requested_voice_map, auto_voices
+    ):
+        validated_voices: Dict[str, Voice] = {}
+        character_names = [
+            str(character.get("name") or "")
+            for character in character_list
+            if isinstance(character, dict) and character.get("name")
+        ]
+        speakers = {
+            str(scene.get("speaker") or "")
+            for scene in video_data.get("cinematic", [])
+            if isinstance(scene, dict)
+            and scene.get("audio_type") == "dialogue"
+            and scene.get("speaker")
+        }
+        if not speakers:
+            speakers = {
+                str(line.get("character") or "")
+                for line in video_data.get("text", [])
+                if isinstance(line, dict) and line.get("character")
+            }
+
+        speaker_character_names = {}
+        for speaker in speakers:
+            if speaker in character_names:
+                speaker_character_names[speaker] = speaker
+                continue
+            candidates = [
+                name
+                for name in character_names
+                if name.casefold().endswith(f" {speaker.casefold()}")
+            ]
+            if len(candidates) == 1:
+                speaker_character_names[speaker] = candidates[0]
+
+        active_character_names = set(speaker_character_names.values())
+        requested_voice_map = requested_voice_map or {}
+        allowed_names = active_character_names | speakers | set(requested_voice_map)
+        voice_characters = [
+            character
+            for character in character_list
+            if isinstance(character, dict)
+            and character.get("name") in active_character_names
+        ]
+
+        for character_name, voice_id in requested_voice_map.items():
+            voice = db_session.query(Voice).get(voice_id)
+            if voice:
+                validated_voices[character_name] = voice
+
+        cached_voice_map = video_data.get("resolved_voice_character_map", {})
+        if isinstance(cached_voice_map, dict):
+            for character_name, voice_id in cached_voice_map.items():
+                if character_name not in allowed_names or character_name in validated_voices:
+                    continue
+                voice = db_session.query(Voice).get(voice_id)
+                if voice:
+                    validated_voices[character_name] = voice
+
+        def voice_from_character_description(character_name):
+            character = next(
+                (
+                    item
+                        for item in voice_characters
+                    if isinstance(item, dict) and item.get("name") == character_name
+                ),
+                None,
+            )
+            description = character.get("voice_description") if character else None
+            if not description:
+                return None
+            return Voice(
+                voice_id="Fenrir",
+                voice_name="Fenrir",
+                voice_sample="",
+                tts_toolkit="gemini",
+                description=description,
+            )
+
+        if isinstance(cached_voice_map, dict):
+            for character_name, voice_id in cached_voice_map.items():
+                if voice_id == "Fenrir" and character_name not in validated_voices:
+                    voice = voice_from_character_description(character_name)
+                    if voice:
+                        validated_voices[character_name] = voice
+
+        if auto_voices:
+            try:
+                from baasha_pipeline.voice_matcher import pick_automatic_voices
+
+                auto_map = pick_automatic_voices(
+                    voice_characters,
+                    db_session.query(Voice).all(),
+                    taken=validated_voices,
+                )
+                for character_name, voice in auto_map.items():
+                    validated_voices.setdefault(character_name, voice)
+            except Exception:
+                logging.exception("voice auto-cast failed")
+
+        for character in voice_characters:
+            if not isinstance(character, dict):
+                continue
+            character_name = character.get("name")
+            if character_name and character_name not in validated_voices:
+                voice = voice_from_character_description(character_name)
+                if voice:
+                    validated_voices[character_name] = voice
+
+        # Match concise dialogue speaker labels to a uniquely named bible entry
+        # (for example "Ravana" to "King Ravana").
+        for speaker in speakers:
+            if speaker in validated_voices:
+                continue
+            character_name = speaker_character_names.get(speaker)
+            if character_name in validated_voices:
+                validated_voices[speaker] = validated_voices[character_name]
+
+        video_data["resolved_voice_character_map"] = {
+            character_name: voice.id
+            for character_name, voice in validated_voices.items()
+        }
+        return validated_voices
+
+    @staticmethod
     @with_app_context
     def post():
         args = draft_parser.parse_args()
@@ -553,21 +700,17 @@ class DraftResource(Resource):
             db.session.commit()
             logging.info(f"Auto-created missing Idea record: {args.idea_id}")
 
-        if args.voice_id:
-            voice = Voice.query.get(args.voice_id)
-            if not voice:
-                abort(404, message="voice_id not found")
-
+        background_process = None
         try:
+            if args.voice_id:
+                voice = Voice.query.get(args.voice_id)
+                if not voice:
+                    abort(404, message="voice_id not found")
+
             # intialize_conversation(chatbot)
             chatbot = BaashaChat.ChatInterface()
             chatbot.new_conversation()
 
-        except Exception as e:
-            logger.info(e)
-            raise Exception(f"Error while creating chatbot instance, {e}")
-
-        try:
             version = args.version_id
             action = "updated"
 
@@ -631,11 +774,18 @@ class DraftResource(Resource):
                 ),
             )
 
+        except HTTPException:
+            raise
+
         except Exception as e:
             logger.error("Error processing draft ::", e)
             abort(400, message=f"Error : {e}")
 
         finally:
+            # Release the valkey lock if the background task never started
+            # (otherwise the idea stays locked for the full 900s TTL).
+            if background_process is None:
+                valkey_client.delete(lock_key)
             db.session.flush()
 
     @staticmethod
@@ -726,6 +876,9 @@ class DraftResource(Resource):
             story_sentences = video_data["text"]
             content_type = video_data.get("content_type", "reel")
 
+            if args.render_engine:
+                video_data["render_engine"] = args.render_engine
+
             if content_type == "conversation":
                 story_sentences = list(map(lambda x: x["text"], story_sentences))
                 story = "\n".join(story_sentences)
@@ -784,6 +937,36 @@ class DraftResource(Resource):
             if video_data.get("story_context"):
                 chatbot.set_global_ctx(video_data.get("story_context"))
 
+            if args.style_reference_urls:
+                # Style-ref pre-processing: if the user's refs depict characters,
+                # swap them for a faceless style card (cached in video_data).
+                if video_data.get("style_card_url"):
+                    args.style_reference_urls = [video_data["style_card_url"]]
+                else:
+                    from processor import synthesize_faceless_style_card
+
+                    style_card = synthesize_faceless_style_card(
+                        chatbot,
+                        args.style_reference_urls,
+                        image_config={"name": image_engine, "aspect_ratio": "1:1"},
+                        out_dir=local_cache,
+                        style_terms=(
+                            global_image_styles.to_text()
+                            if global_image_styles
+                            else None
+                        ),
+                    )
+                    if style_card:
+                        video_data.setdefault(
+                            "original_style_reference_urls", args.style_reference_urls
+                        )
+                        video_data["style_card_url"] = style_card
+                        args.style_reference_urls = [style_card]
+                        draft.style_reference_urls = [style_card]
+                        draft.video_data = json.dumps(video_data)
+                        db_session.commit()
+                        patch_log(f"style card active: {style_card}")
+
             if args.self_heal:
 
                 image_gen_errors = video_data.get("image_gen_errors", {})
@@ -837,6 +1020,7 @@ class DraftResource(Resource):
                     image_styles=global_image_styles,
                     character_names=character_names if character_names else None,
                     style_refs=draft.style_reference_urls,
+                    target_duration=args.duration,
                 )
 
                 video_data["text"] = story
@@ -1257,7 +1441,13 @@ class DraftResource(Resource):
                                 }
                             )
 
-                        grid_guidance = " create a single frame only"
+                        grid_guidance = (
+                            " Generate ONE single frame only, rendered as a standalone "
+                            "vertically-oriented 9:16 cinematic panel. It must be stylistically "
+                            "IDENTICAL to the reference grid panels — same visual medium, palette, "
+                            "color grading, lighting and rendering quality — and must read as the "
+                            "next frame of the same film."
+                        )
 
                         res, err = create_image_grid(
                             chunk_prompts,
@@ -1299,12 +1489,19 @@ class DraftResource(Resource):
                             f"or synthetic textures that are not present in the crop. "
                             f"Preserve the original atmospheric mood and organic rendering quality of the reference crop completely."
                         )
-                        upscale_prompts = [enhance_prompt] * len(regen_images)
+                        # Only upscale successfully regenerated images; index
+                        # alignment between prompts and ref urls must be kept
+                        # 1:1 with the crops being upscaled (no `if img`
+                        # compression), and write-back must use the original
+                        # regen slot so a failed crop cannot shift results.
+                        upscale_targets = [
+                            (i, img) for i, img in enumerate(regen_images) if img
+                        ]
+                        upscale_prompts = [enhance_prompt] * len(upscale_targets)
                         upscale_ref_urls = [
                             [{"url": img, "type": "subject", "name": f"crop-{i}"}]
                             + style_refs_for_grid
-                            for i, img in enumerate(regen_images)
-                            if img
+                            for i, img in upscale_targets
                         ]
 
                         if upscale_ref_urls:
@@ -1321,9 +1518,9 @@ class DraftResource(Resource):
                                 chatbot_bbox,
                             )
                             patch_original_crops = list(regen_images)
-                            for i, img in enumerate(upscaled_images):
-                                if img:
-                                    regen_images[i] = img
+                            for pos, (i, _) in enumerate(upscale_targets):
+                                if pos < len(upscaled_images) and upscaled_images[pos]:
+                                    regen_images[i] = upscaled_images[pos]
 
                     image_engine_map = {}
                 else:
@@ -1377,10 +1574,14 @@ class DraftResource(Resource):
                 if "patch_original_crops" in locals():
                     video_data["grid_crops"] = grid_crops
                     video_data["upscaled_images"] = upscaled_images_arr
-                focus_directions = image_search_agent.find_image_focus_direction(
+                camera_moves = image_search_agent.find_image_focus_direction(
                     patched_img, chatbot
                 )
-                video_data["image_focus_directions"] = focus_directions
+                video_data["image_camera_moves"] = camera_moves
+                video_data["image_focus_directions"] = [
+                    m.get("direction", "middle") if isinstance(m, dict) else "middle"
+                    for m in camera_moves
+                ]
 
             if args.judge_grids:
                 if old_stage >= DraftStages.IMAGE_GEN:
@@ -1590,9 +1791,10 @@ class DraftResource(Resource):
 
                             if not prompt_text:
                                 prompt_text = (
-                                    "The camera maintains a slow, steady, and visually stable dolly-in movement to enhance depth. "
-                                    "Ensure absolute anatomical integrity. The background environment and room geometry remain "
-                                    "completely static and locked in place. Do not animate any mouth or lip movement."
+                                    "The subjects stay exactly as framed in the source image; body sizes never change. "
+                                    "The scenery and room geometry stay fixed where they are. Only a faint ambient "
+                                    "shimmer of dust and light moves in the background. Mouths stay closed. The clip "
+                                    "resolves to complete stillness in the final half-second."
                                 )
 
                             if (
@@ -1606,22 +1808,24 @@ class DraftResource(Resource):
                             selected_desp.append(prompt_text)
                             selected_pos.append(obj["pos"] - 1)
                             force_regen.append(obj.get("regen"))
-                        else:
-                            speech_text = video_data["text"][obj["pos"] - 1]
-                            prompt_text = (
-                                f"The camera maintains a slow, steady, and visually stable dolly-in movement to enhance depth, "
-                                f"matching the emotional tone of the scene: '{speech_text}'. Ensure absolute anatomical integrity. "
-                                f"The background environment and room geometry remain completely static and locked in place. "
-                                f"Do not animate any mouth or lip movement."
-                            )
-                            if image_unified_style:
-                                prompt_text = (
-                                    prompt_text + " aesthetic: " + image_unified_style
-                                )
 
-                            selected_desp.append(prompt_text)
-                            selected_pos.append(obj["pos"] - 1)
-                            force_regen.append(obj.get("regen"))
+                    else:
+                        speech_text = video_data["text"][obj["pos"] - 1]
+                        prompt_text = (
+                            f"The subjects stay exactly as framed in the source image; body sizes never change. "
+                            f"The scenery and room geometry stay fixed where they are. Only a faint ambient "
+                            f"shimmer of dust and light moves in the background, matching the emotional tone "
+                            f"of the line: '{speech_text}'. Mouths stay closed. The clip resolves to complete "
+                            f"stillness in the final half-second."
+                        )
+                        if image_unified_style:
+                            prompt_text = (
+                                prompt_text + " aesthetic: " + image_unified_style
+                            )
+
+                        selected_desp.append(prompt_text)
+                        selected_pos.append(obj["pos"] - 1)
+                        force_regen.append(obj.get("regen"))
 
                 try:
                     if len(selected_images) < 1:
@@ -2172,6 +2376,9 @@ class DraftResource(Resource):
                     args.idea_id, args.version_id, draft, request.url_root
                 )
                 if success:
+                    draft.generated_video = None
+                    video_data.pop("render_error", None)
+                    draft.video_data = json.dumps(video_data)
                     draft.stage = DraftStages.VIDEO_GEN_STARTED
                 else:
                     video_data["render_error"] = err
@@ -2189,9 +2396,99 @@ class DraftResource(Resource):
 
     def trigger_render(idea_id, version, draft, webhook_origin):
         webhook = f"{webhook_origin}video_gen_webhook/{idea_id}/{version}"
-        client = boto3.client("lambda", **render_service_creds)
 
         try:
+            draft_render_engine = json.loads(draft.video_data or "{}").get(
+                "render_engine"
+            )
+        except Exception:
+            draft_render_engine = None
+
+        default_render_mode = config.get("RENDER", "MODE", fallback="ffmpeg")
+        render_mode = draft_render_engine or default_render_mode
+
+        # Local/dev browsers are expected to use ffmpeg by default, and the
+        # Lambda path should never crash the app when AWS creds are missing or
+        # an incompatible object-storage config gets loaded from tokens/.
+        if not draft_render_engine and webhook_origin and (
+            "localhost" in webhook_origin or "127.0.0.1" in webhook_origin
+        ):
+            render_mode = "ffmpeg"
+
+        if render_mode == "ffmpeg":
+            script = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "scripts",
+                "render_ffmpeg_simplistic.py",
+            )
+            workdir = os.path.join(local_cache, "renders", f"{idea_id}.{version}")
+            cmd = [
+                sys.executable,
+                script,
+                "--idea", str(idea_id),
+                "--version", str(version),
+                "--webhook", webhook,
+                "--workdir", workdir,
+            ]
+            os.makedirs(workdir, exist_ok=True)
+            log_file = open(os.path.join(workdir, "render.log"), "ab")
+
+            def _run_local_render():
+                try:
+                    subprocess.run(
+                        cmd,
+                        stdout=log_file,
+                        stderr=log_file,
+                        cwd=os.path.dirname(os.path.abspath(__file__)),
+                        check=False,
+                    )
+                except Exception:
+                    logging.exception("ffmpeg render spawn failed")
+                finally:
+                    log_file.close()
+
+            threading.Thread(target=_run_local_render, daemon=True).start()
+            logging.info(f"ffmpeg local render queued: {idea_id}.{version}")
+            return True, None
+
+        try:
+            creds = render_service_creds or {}
+            has_valid_lambda_auth = (
+                creds.get("aws_access_key_id")
+                and creds.get("aws_secret_access_key")
+            ) or (
+                creds.get("access_key")
+                and creds.get("secret_key")
+            )
+            if "cluster" in creds or "protocol" in creds:
+                raise RuntimeError(
+                    "tokens/aws_render.json contains object-storage endpoint "
+                    "credentials, not AWS Lambda credentials. Select FFmpeg for "
+                    "local rendering or configure AWS Lambda credentials."
+                )
+            if not has_valid_lambda_auth:
+                raise RuntimeError(
+                    "No valid AWS Lambda credentials available for render; "
+                    "falling back to local FFmpeg rendering is recommended."
+                )
+
+            client_kwargs = {}
+            if creds.get("aws_access_key_id") and creds.get("aws_secret_access_key"):
+                client_kwargs["aws_access_key_id"] = creds["aws_access_key_id"]
+                client_kwargs["aws_secret_access_key"] = creds["aws_secret_access_key"]
+            elif creds.get("access_key") and creds.get("secret_key"):
+                client_kwargs["aws_access_key_id"] = creds["access_key"]
+                client_kwargs["aws_secret_access_key"] = creds["secret_key"]
+
+            region = (
+                creds.get("region_name")
+                or os.getenv("AWS_REGION")
+                or os.getenv("AWS_DEFAULT_REGION")
+            )
+            if region:
+                client_kwargs["region_name"] = region
+
+            client = boto3.client("lambda", **client_kwargs)
             response = client.invoke(
                 FunctionName="pataka-remotion",
                 InvocationType="Event",
@@ -2322,12 +2619,17 @@ class DraftResource(Resource):
                 for key in [
                     "content_type",
                     "voice_id",
+                    "voice_character_map",
                     "style_id",
                     "background_music_id",
                     "image_engine",
+                    "visual_engine",
+                    "render_engine",
+                    "auto_voices",
                 ]:
-                    if data.get(key):
-                        video_data_cache[key] = data.get(key)
+                    value = data.get(key)
+                    if value is not None and value != "":
+                        video_data_cache[key] = value
 
                 target_draft.video_data = json.dumps(video_data_cache)
                 db_session.commit()
@@ -2345,7 +2647,16 @@ class DraftResource(Resource):
                 logging.info(f"content-type: {content_type}")
 
                 voice_id = data.get("voice_id") or video_data_cache.get("voice_id")
-                voice_character_map = data["voice_character_map"]
+                voice_character_map = data.get("voice_character_map") or (
+                    video_data_cache.get("voice_character_map") or {}
+                )
+                auto_voices = (
+                    data.get("auto_voices")
+                    if data.get("auto_voices") is not None
+                    else video_data_cache.get("auto_voices", False)
+                )
+                if auto_voices:
+                    voice_id = None
                 style_id = data.get("style_id") or video_data_cache.get("style_id")
                 style_ref_urls = data["style_reference_urls"]
 
@@ -2380,6 +2691,12 @@ class DraftResource(Resource):
                 image_engine = data.get("image_engine") or video_data_cache.get(
                     "image_engine"
                 )
+
+                visual_engine = data.get("visual_engine") or video_data_cache.get(
+                    "visual_engine"
+                ) or "image"
+                if image_engine and str(image_engine).startswith("lottie"):
+                    visual_engine = image_engine
 
                 character_reference = data["character_ref"] or None
                 character_reference = parse_user_provided_character(character_reference)
@@ -2508,6 +2825,31 @@ class DraftResource(Resource):
                         # Override any existing text-based image_styles when a definitive style_ref is present
                         image_styles = to_style_data({"themes": [style_desc]})
 
+                # Style-ref pre-processing: if the user's refs depict characters,
+                # synthesize a faceless palette/texture card from them once and use
+                # ONLY the card downstream (portraits, grids, upscales, patches).
+                # Cached in video_data so later stage re-runs reuse it.
+                if style_ref_urls and not video_data.get("style_card_url"):
+                    from processor import synthesize_faceless_style_card
+
+                    style_card = synthesize_faceless_style_card(
+                        chatbot,
+                        style_ref_urls,
+                        image_config=image_config,
+                        out_dir=local_cache,
+                        style_terms=style_desc,
+                    )
+                    if style_card:
+                        if "original_style_reference_urls" not in video_data:
+                            video_data["original_style_reference_urls"] = style_ref_urls
+                        video_data["style_card_url"] = style_card
+                        target_draft.style_reference_urls = [style_card]
+                        target_draft.video_data = json.dumps(video_data)
+                        db_session.commit()
+                        logging.info(
+                            f"style card active for this draft: {style_card}"
+                        )
+
                 title = target_draft.title
 
                 story_raw = target_draft.story
@@ -2600,6 +2942,7 @@ class DraftResource(Resource):
                             else None,
                             style_refs=target_draft.style_reference_urls,
                             prompt_overrides=prompt_overrides,
+                            target_duration=data.duration,
                         )
                         video_data["cinematic"] = cinematic_data
 
@@ -2665,6 +3008,7 @@ class DraftResource(Resource):
                             user_characters=character_reference,
                             cinematic_data=video_data.get("cinematic"),
                             prompt_overrides=prompt_overrides,
+                            visual_engine=visual_engine,
                         )
                         target_draft.character_ref = json.dumps(character_list)
 
@@ -2688,6 +3032,16 @@ class DraftResource(Resource):
                     db_session.commit()
                 else:
                     character_list = json.loads(target_draft.character_ref or "[]")
+
+                validated_voices = DraftResource.resolve_character_voices(
+                    db_session,
+                    character_list,
+                    video_data,
+                    voice_character_map,
+                    auto_voices,
+                )
+                target_draft.video_data = json.dumps(video_data)
+                db_session.commit()
 
                 if stop_at_stage == target_draft.stage:
                     return stop_gen(target_draft.stage)
@@ -2776,7 +3130,7 @@ class DraftResource(Resource):
                             {
                                 "url": s,
                                 "type": "style",
-                                "name": f"reference for style, aesthetic, color palette, texture only.{style_str}",
+                                "name": f"reference for aesthetic ONLY: color palette, color grading, lighting and texture. This reference may itself depict a person or character — that subject, its face and its figure MUST NOT appear in any panel.{style_str}",
                             }
                             for s in style_urls
                         ]
@@ -2787,6 +3141,7 @@ class DraftResource(Resource):
                     all_crops = []
                     all_grids = []
                     all_other_grids = []
+                    all_lottie_scenes = []
 
                     # Original prompt collection
                     all_prompts = list(
@@ -2798,9 +3153,17 @@ class DraftResource(Resource):
                     prev_chunk_size = chunk_size
                     chunk_idx = 0
                     current_style_refs = []
+                    lottie_visual = str(visual_engine).startswith("lottie")
                     for chunk_num in range(0, chunk_count + remainder_chunk):
+                        if chunk_idx >= len(all_prompts):
+                            break
 
-                        if chunk_num >= chunk_count:
+                        if lottie_visual:
+                            # Compose all panels in ONE call: per-panel calls
+                            # would each index their first scene as scene_0 and
+                            # overwrite each other's uploads.
+                            chunk_size = len(all_prompts) - chunk_idx
+                        elif chunk_num >= chunk_count:
                             chunk_size = 1
 
                         chunk_prompts = all_prompts[chunk_idx : chunk_idx + chunk_size]
@@ -2842,7 +3205,13 @@ class DraftResource(Resource):
                         if chunk_size == 4:
                             grid_guidance += " Arrange the image as a strict 2x2 grid where each of the four panels is a vertically-oriented 9:16 frame, separated by thin black border"
                         elif chunk_size == 1:
-                            grid_guidance += " create a single frame only"
+                            grid_guidance += (
+                                " Generate ONE single frame only, rendered as a standalone "
+                                "vertically-oriented 9:16 cinematic panel. It must be stylistically "
+                                "IDENTICAL to the preceding panels — same visual medium, palette, "
+                                "color grading, lighting and rendering quality — and must continue "
+                                "the sequence directly as the next frame of the same film."
+                            )
 
                         retries = 2
                         retry_count = 0
@@ -2861,17 +3230,32 @@ class DraftResource(Resource):
                                 refine_grid_count=1 if data.judge_grids else 0,
                                 story_context=target_draft.story,
                                 prompt_overrides=prompt_overrides,
+                                visual_engine=visual_engine,
+                                character_list=character_list,
+                                lottie_entries_out=all_lottie_scenes,
+                                lottie_outdir=f"lottie/{data['idea_id']}.{target_draft_version}",
+                                existing_lottie_scenes=video_data.get("lottie_scenes") or [],
                             )
 
                             if res:
                                 story_grid, grid_imgs, other_grids, grid_prompt = res
+
+                                if lottie_visual and not story_grid:
+                                    logging.error(
+                                        f"Lottie scene generation returned no previews: {grid_imgs}"
+                                    )
+                                    chunk_idx = len(all_prompts)
+                                    retries = -1
+                                    break
 
                                 crop_count = (
                                     len(grid_imgs)
                                     if grid_imgs
                                     else (1 if story_grid else 0)
                                 )  # for chunk size 1, story grid also counted
-                                if not story_grid or len(chunk_prompts) != crop_count:
+                                if lottie_visual:
+                                    retries = -1
+                                elif not story_grid or len(chunk_prompts) != crop_count:
                                     if retry_count < retries:
                                         logging.info(
                                             f"retrying grid gen, current grid : {story_grid} \n crops : {grid_imgs}"
@@ -2908,6 +3292,34 @@ class DraftResource(Resource):
 
                     chatbot_bbox.delete_conversation()
 
+                    if lottie_visual:
+                        successful_scenes = [
+                            entry
+                            for entry in all_lottie_scenes
+                            if entry and entry.get("lottie_url")
+                        ]
+                        if len(successful_scenes) != len(all_prompts):
+                            failed_panels = [
+                                entry.get("panel_index")
+                                for entry in all_lottie_scenes
+                                if not entry or not entry.get("lottie_url")
+                            ]
+                            video_data["lottie_scenes"] = all_lottie_scenes
+                            target_draft.video_data = json.dumps(video_data)
+                            db_session.commit()
+                            logging.error(
+                                "Lottie scene generation passed %s/%s panels; "
+                                "failed panels: %s",
+                                len(successful_scenes),
+                                len(all_prompts),
+                                failed_panels,
+                            )
+                            raise RuntimeError(
+                                f"Lottie scene generation passed "
+                                f"{len(successful_scenes)}/{len(all_prompts)} panels; "
+                                f"failed panels: {failed_panels}."
+                            )
+
                     # Handle accumulated results
                     if all_grids:
                         for idx, grid_data in enumerate(all_grids):
@@ -2943,9 +3355,11 @@ class DraftResource(Resource):
                         uploaded_crop_urls = []
                         for i, gi in enumerate(all_crops):
                             if i < len(image_descriptors):
+                                if not gi:
+                                    continue
                                 crop_url = (
                                     upload_image(gi)
-                                    if not gi.startswith("http")
+                                    if not str(gi).startswith("http")
                                     else gi
                                 )
                                 uploaded_crop_urls.append(crop_url)
@@ -2957,6 +3371,11 @@ class DraftResource(Resource):
 
                         video_data["grid_crops"] = uploaded_crop_urls
                         video_data["images"] = uploaded_crop_urls
+
+                        if str(visual_engine).startswith("lottie") and all_lottie_scenes:
+                            video_data["lottie_scenes"] = [
+                                e for e in all_lottie_scenes if e
+                            ]
 
                         target_draft.character_ref = json.dumps(character_list)
                         target_draft.video_data = json.dumps(video_data)
@@ -2970,7 +3389,9 @@ class DraftResource(Resource):
                     return stop_gen(target_draft.stage)
 
                 if target_draft.stage < DraftStages.IMAGE_UPSCALE:
-                    if getattr(data, "upscale_grid_crops", True) and video_data.get(
+                    if str(visual_engine).startswith("lottie"):
+                        logging.info("lottie visual engine: skipping diffusion upscale")
+                    elif getattr(data, "upscale_grid_crops", True) and video_data.get(
                         "use_image_grid"
                     ):
                         grid_crops = video_data.get("grid_crops", [])
@@ -3014,6 +3435,8 @@ class DraftResource(Resource):
                                     "name": image_engine,
                                     "width": image_config.get("width"),
                                     "height": image_config.get("height"),
+                                    # Preserve the draft's intended aspect ratio during upscale
+                                    "aspect_ratio": image_config.get("aspect_ratio", "9:16"),
                                 },
                                 chatbot_bbox,
                             )
@@ -3033,38 +3456,6 @@ class DraftResource(Resource):
                 )
 
                 if target_draft.stage < DraftStages.AUDIO_GEN_VIDEO_CONFIG_GEN:
-
-                    validated_voices: Dict[str, Voice] = {}
-
-                    # 1. Resolve manual user mapped voices from database
-                    if voice_character_map:
-                        for ch in voice_character_map:
-                            vid = voice_character_map[ch]
-                            if validated_voices.get(ch):
-                                continue
-                            voice_details = Voice.query.get(vid)
-                            if voice_details:
-                                validated_voices[ch] = voice_details
-
-                    # 2. Resolve characters with voice descriptions from character bible
-                    character_list = (
-                        json.loads(target_draft.character_ref)
-                        if target_draft.character_ref
-                        else []
-                    )
-                    for char in character_list:
-                        ch_name = char.get("name")
-                        voice_desc = char.get("voice_description")
-                        if ch_name and voice_desc:
-                            if ch_name not in validated_voices:
-                                validated_voices[ch_name] = Voice(
-                                    voice_id="Fenrir",
-                                    voice_name="Fenrir",
-                                    voice_sample="",
-                                    tts_toolkit="gemini",
-                                    description=voice_desc,
-                                )
-
                     voice_character_map = validated_voices
 
                     out_dir = "{}.{}".format(data["idea_id"], target_draft_version)
@@ -3188,10 +3579,43 @@ class DraftResource(Resource):
                         target_draft.video_data = json.dumps(video_data)
                         db_session.commit()
 
-                    remotion_config_url = generate_remotion_video_config(video_data)
+                    if str(visual_engine).startswith("lottie"):
+                        scene_entries = [
+                            e
+                            for e in (video_data.get("lottie_scenes") or [])
+                            if e and e.get("lottie_url")
+                        ]
+                        if not scene_entries:
+                            scene_entries = [
+                                {
+                                    "lottie_url": None,
+                                    "url": u,
+                                }
+                                for u in (video_data.get("images") or [])
+                            ]
+                        audio_url = None
+                        audios = video_data.get("audios") or []
+                        if audios and isinstance(audios[0], (list, tuple)):
+                            audio_url = audios[0][0] if audios[0] else None
+                        elif audios and isinstance(audios[0], str):
+                            audio_url = audios[0]
+                        lottie_out = lottie_assets_mod.create_lottie_timeline(
+                            scene_entries,
+                            width=img_width or 1080,
+                            height=img_height or 1920,
+                            audio_url=audio_url,
+                            outdir=f"lottie/{data['idea_id']}.{target_draft_version}",
+                        )
+                        if lottie_out:
+                            video_data["lottie"] = lottie_out
+                            target_draft.video_data = json.dumps(video_data)
+                            if lottie_out.get("timeline_url"):
+                                target_draft.remotion_config = lottie_out["timeline_url"]
+                    else:
+                        remotion_config_url = generate_remotion_video_config(video_data)
 
-                    if remotion_config_url:
-                        target_draft.remotion_config = remotion_config_url
+                        if remotion_config_url:
+                            target_draft.remotion_config = remotion_config_url
 
                     target_draft.stage = DraftStages.AUDIO_GEN_VIDEO_CONFIG_GEN
                     on_stage_complete(target_draft.stage)
@@ -3507,10 +3931,12 @@ class VoiceResource(Resource):
     @staticmethod
     @with_app_context
     def preload_voices():
-        client = ElevenLabs(
-            api_key=config["ELEVENLABS"]["API_KEY"],
-        )
-        elevenlabs_voices = client.voices.get_all().voices
+        try:
+            client = ElevenLabs(api_key=config["ELEVENLABS"]["API_KEY"])
+            elevenlabs_voices = client.voices.get_all().voices
+        except Exception as e:
+            logger.warning("ElevenLabs voice preload failed: %s", e)
+            return
 
         voice_names = []
         for voice in elevenlabs_voices:
@@ -4444,6 +4870,22 @@ def serve_character_bible():
     return send_from_directory("static/character_bible", "index.html")
 
 
+@app.route("/lottie/player", methods=["GET"])
+def serve_lottie_player():
+    return send_from_directory("static", "lottie_player.html")
+
+
+@app.route("/lottie/demo", methods=["GET"])
+@app.route("/lottie/demo/", methods=["GET"])
+def serve_lottie_demo():
+    return send_from_directory("static/lottie_demo", "index.html")
+
+
+@app.route("/lottie/demo/<path:path>")
+def serve_lottie_demo_assets(path):
+    return send_from_directory("static/lottie_demo", path)
+
+
 @app.route("/character-bible/<path:path>")
 def serve_character_bible_assets(path):
     return send_from_directory("static/character_bible", path)
@@ -4479,6 +4921,48 @@ def api_judge_grid():
     )
 
     return jsonify(report)
+
+
+@app.route("/upload/style_ref", methods=["POST"])
+def upload_style_ref():
+    uploaded = request.files.get("file")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"message": "multipart form field 'file' is required"}), 400
+
+    allowed_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
+    _, ext = os.path.splitext(uploaded.filename)
+    ext = (ext or "").lower()
+    if ext not in allowed_exts:
+        return (
+            jsonify(
+                {
+                    "message": f"unsupported style ref format '{ext or '(none)'}'; allowed: {sorted(allowed_exts)}"
+                }
+            ),
+            400,
+        )
+
+    from PIL import Image, UnidentifiedImageError
+
+    os.makedirs("tmp/style_refs", exist_ok=True)
+    local_path = os.path.join("tmp", "style_refs", f"{uuid.uuid4()}{ext}")
+    uploaded.save(local_path)
+
+    # Reject files that are not real, decodable images (extension alone lies)
+    try:
+        Image.open(local_path).verify()
+    except (UnidentifiedImageError, Exception) as e:
+        os.remove(local_path)
+        return (
+            jsonify({"message": f"file is not a valid image: {type(e).__name__}"}),
+            400,
+        )
+
+    logging.info(f"style ref uploaded: {uploaded.filename} -> {local_path}")
+    public_url = upload_image(local_path)
+    os.remove(local_path)
+
+    return jsonify({"url": public_url})
 
 
 @app.route("/api/refine_grid", methods=["POST"])

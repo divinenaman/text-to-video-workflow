@@ -1,6 +1,6 @@
 from os.path import join
 from playwright.sync_api import sync_playwright, Page, Locator, Playwright, Browser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, unquote
 import json
 from . import chatbot as Chatbot
 from .prompts.splitters import markdown_parse
@@ -9,6 +9,10 @@ from . import errors, text_embeddings
 import time
 import atexit
 import threading
+import os
+import re
+import shutil
+import subprocess
 from . import build_scraper
 
 select_image_prompt = """Given a screenshot of an image search repository webpage, select the single best image most appropriate for the given search query.
@@ -30,6 +34,118 @@ Format your output as a JSON object enclosed in ```json with keys:
 
 Search Query:
 """
+
+
+LIGHTPANDA_CONTEXT_CHARS = 16000
+
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _extract_main_text(html: str):
+    """Reader-mode style main-content extraction. Best-effort trafilatura."""
+    if not html or len(html) < 200:
+        return None
+    try:
+        import trafilatura
+
+        return trafilatura.extract(html, include_comments=False)
+    except Exception:
+        logging.info("trafilatura extraction unavailable, using raw text")
+    return None
+
+
+def _clean_markdown(text: str):
+    """Strip markdown link targets / images so nav chrome does not eat the
+    context budget."""
+    if not text:
+        return ""
+    text = _MD_IMG_RE.sub("", text)
+    text = _MD_LINK_RE.sub(r"\1", text)
+    lines = [ln.strip() for ln in text.splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
+_lightpanda_bin_cache = None
+
+
+def _lightpanda_bin():
+    """Resolve the Lightpanda CLI binary (replaces screenshot->vision summaries)."""
+    global _lightpanda_bin_cache
+    if _lightpanda_bin_cache is not None:
+        return _lightpanda_bin_cache
+    bin_path = os.environ.get("LIGHTPANDA_BIN") or shutil.which("lightpanda")
+    if bin_path and os.path.isfile(bin_path) and os.access(bin_path, os.X_OK):
+        _lightpanda_bin_cache = bin_path
+        return _lightpanda_bin_cache
+    _lightpanda_bin_cache = ""
+
+    return _lightpanda_bin_cache
+
+
+def fetch_page_text(url, wait_ms=1500, timeout=25, obey_robots=False):
+    """Fetch a page and extract its main text content.
+
+    Chain: Lightpanda html dump -> trafilatura (reader-mode main content);
+    then Lightpanda markdown dump (links stripped); finally plain requests+bs4.
+    Returns a plain-text string; empty string on failure.
+    """
+    if not isinstance(url, str) or not url.startswith("http"):
+        return ""
+
+    def dump(mode):
+        bin_path = _lightpanda_bin()
+        if not bin_path:
+            return None
+        try:
+            cmd = [bin_path, "fetch", "--dump", mode, "--wait-ms", str(wait_ms), url]
+            if obey_robots:
+                cmd.insert(1, "--obey-robots")
+            res = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+                check=True,
+            )
+            return res.stdout.decode("utf-8", errors="replace").strip()
+        except Exception as e:
+            logging.info(f"lightpanda-{mode} dump: error for {url} : {e}")
+            return None
+
+    # 1) JS-rendered html -> main-content extraction
+    text = _extract_main_text(dump("html") or "")
+
+    # 2) markdown dump without link targets (chrome text still present)
+    if not text:
+        text = _clean_markdown(dump("markdown") or "")
+        logging.info(f"fetch_page_text: trafilatura empty for {url}, using raw markdown")
+
+    # 3) plain http fetch, no browser
+    if not text:
+        try:
+            import requests
+
+            res = requests.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) "
+                    "Gecko/20100101 Firefox/130.0"
+                },
+                timeout=timeout,
+            )
+            text = _extract_main_text(res.text)
+            if not text:
+                from bs4 import BeautifulSoup
+
+                soup = BeautifulSoup(res.text, "html.parser")
+                for tag in soup(["script", "style", "noscript", "head", "nav", "footer"]):
+                    tag.decompose()
+                text = " ".join(soup.stripped_strings)
+        except Exception as e:
+            logging.error(f"fetch_page_text: failed for {url} : {e}")
+
+    return (text or "").strip()
 
 
 class BrowserManager:
@@ -257,46 +373,343 @@ def choose_best_image(page: Page, chatbot: Chatbot.ChatInterface, images, query)
     return None, None, 0.0
 
 
-@errors.log_ctx_errors
+FOCUS_DIRECTIONS = (
+    "top",
+    "bottom",
+    "left",
+    "right",
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+    "middle",
+)
+CAMERA_MOVES = (
+    "dolly-in",
+    "dolly-out",
+    "pan-left",
+    "pan-right",
+    "tilt-up",
+    "tilt-down",
+    "drift-toward-focus",
+    "static",
+)
+CAMERA_INTENSITIES = ("subtle", "medium", "strong")
+
+_direction_fix = {
+    "center": "middle",
+    "centre": "middle",
+    "top right": "top-right",
+    "top left": "top-left",
+    "bottom right": "bottom-right",
+    "bottom left": "bottom-left",
+    "down": "bottom",
+    "up": "top",
+}
+
+
+def _norm_focus_direction(d):
+    d = (unquote(str(d or "middle")) or "middle").strip().lower()
+    d = _direction_fix.get(d, d)
+    return d if d in FOCUS_DIRECTIONS else "middle"
+
+
+_direction_to_move = {
+    "middle": None,
+    "top": "tilt-up",
+    "bottom": "tilt-down",
+    "left": "pan-left",
+    "right": "pan-right",
+    "top-left": "drift-toward-focus",
+    "top-right": "drift-toward-focus",
+    "bottom-left": "drift-toward-focus",
+    "bottom-right": "drift-toward-focus",
+}
+
+
+def _parse_camera_entry(entry, idx):
+    """Coerce one vision-LLM answer into a sanitized camera move dict."""
+    if isinstance(entry, list) and len(entry) == 1:
+        entry = entry[0]
+    if not isinstance(entry, dict):
+        direction = _norm_focus_direction(entry)
+        return {
+            "direction": direction,
+            "move": _direction_to_move[direction],
+            "intensity": "medium",
+            "subject": "",
+        }
+
+    def pick(*keys):
+        for k in keys:
+            if isinstance(entry.get(k), str) and entry.get(k).strip():
+                return entry[k].strip()
+        return None
+
+    direction = _norm_focus_direction(pick("direction", "anchor", "focus"))
+    move = pick("move", "motion", "camera_move")
+    move = move if move in CAMERA_MOVES else _direction_to_move[direction]
+    intensity = pick("intensity", "magnitude")
+    intensity = intensity if intensity in CAMERA_INTENSITIES else "medium"
+    return {
+        "direction": direction,
+        "move": move if move else "dolly-in",
+        "intensity": intensity,
+        "subject": (pick("subject", "poi") or "")[:120],
+    }
+
+
+def _compact_screenshot(img_bytes, max_w=1280, quality=75):
+    """Downscale + JPEG-encode a screenshot so the vision tier stays happy."""
+    try:
+        from PIL import Image
+        import io
+
+        im = Image.open(io.BytesIO(img_bytes))
+        if im.width > max_w:
+            im = im.resize(
+                (max_w, round(im.height * max_w / im.width)), Image.LANCZOS
+            )
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
+    except Exception:
+        return img_bytes
+
+
+def parse_camera_moves(raw, n_images):
+    """Map a vision-LLM response (dict keyed by batch image indexes) onto the
+    full list of images; fills defaults for missing entries."""
+    if isinstance(raw, list):
+        raw = {str(i): e for i, e in enumerate(raw) if i < n_images}
+    if not isinstance(raw, dict):
+        return None
+    out = []
+    for i in range(n_images):
+        entry = None
+        for k in (str(i), i, f"{i}"):
+            if isinstance(raw, dict) and k in raw:
+                entry = raw[k]
+                break
+        out.append(_parse_camera_entry(entry, i))
+    return out
+
+
+@errors.raise_ctx_errors
 def find_image_focus_direction(images, chatbot: Chatbot.ChatInterface):
-    browser_manager = BrowserManager()
+    """Vision-LLM passes over batches of 4 images; returns a sanitized list of
+    camera-move dicts (`direction`, `move`, `intensity`, `subject`) per image.
+
+    Semantics for the model: a slow camera shot follows - it will drift toward
+    the image's point-of-interest (`direction`) using `move` at `intensity`,
+    so the POI should be described precisely.
+    """
+    prompt_text = (
+        "For every image in the grid you will plan one slow cinematic camera "
+        "move for a short video. In each cell the FIRST LINE shows its grid "
+        "position, e.g. 'Index: 0' is grid position 0, the image BELOW that "
+        "label belongs to it. Respond ONLY for grid positions 0,1,2,3 of THIS "
+        "screenshot.\n\n"
+        "For each image decide:\n"
+        '- "direction": where the point-of-interest (what the shot should '
+        "end up centered on) sits inside the image. One of: top, bottom, "
+        "left, right, top-left, top-right, bottom-left, bottom-right, "
+        "middle.\n"
+        '- "move": the most fitting slow move, one of: dolly-in (push '
+        "closer, best for faces, portraits, detail shots), dolly-out (pull "
+        "back, revealing context, best for already-tight or confusing "
+        "crops), pan-left / pan-right (slide sideways, best for wide "
+        "landscapes, crowds, scenery), tilt-up / tilt-down (slide up/down, "
+        "best for tall subjects, buildings, text panels), "
+        "drift-toward-focus (gentle diagonal glide, neutral fall-back), "
+        "static (symmetric mandalas, screenshots, graphs, already-framed "
+        "art).\n"
+        '- "intensity": "subtle" (tight faces / important text), "medium" '
+        "(default), \"strong\" (wide scenery with lots of room).\n"
+        '- "subject": ~8 words describing the point-of-interest in this '
+        "image.\n\n"
+        "Avoid choosing moves that would crop faces or text if the subject "
+        'is near an edge. Output a JSON object in a ```json block: keys = '
+        'grid positions as strings ("0", "1", "2", "3"), values = objects '
+        "exactly like: {\"direction\": \"...\", \"move\": \"...\", "
+        "\"intensity\": \"...\", \"subject\": \"...\"}\n"
+    )
+
+    browser_manager = get_shared_browser_manager()
     page = browser_manager.get_page()
 
-    prompt_text = f"Given a set of images with a corresponding index, analyze all the images in detail and find the direction where the image should be focused to highlight the main content in an image. The direction can be any of the following - `top`, `bottom`, `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `middle` . Return a JSON with key as the index of the image and value as the one of the direction, enclose the JSON in ```json \n\n"
-
-    output = [None] * len(images)
+    output = []
     i = 0
-    while i <= len(images):
+    while i < len(images):
+        batch = list(images[i : min(len(images), i + 4)])
         html = mk_image_grid_html(
-            list(
-                map(
-                    lambda x: {"src": x, "alt": None},
-                    images[i : min(len(images), i + 4)],
-                )
-            ),
-            col=4,
+            [{"src": x, "alt": None} for x in batch], col=4
         )
-
         page.set_content(html)
         time.sleep(2)
-        # Use full_page=True to capture the entire grid layout safely
         img_bytes = page.screenshot(full_page=True)
 
+        # full-page grid screenshots can be MB-heavy; the free vision tier
+        # responds far more reliably to a compact JPEG encode
+        img_bytes = _compact_screenshot(img_bytes)
+
         prompt = Chatbot.Img(_bytes=img_bytes, text=prompt_text)
-        res = chatbot.fetch_text(prompt)
-        out = json.loads(markdown_parse(res))
 
-        for j in range(i, min(len(images), i + 4)):
-            output[j] = out.get(str(j - i))
+        moves = None
+        for attempt in range(2):
+            try:
+                res = chatbot.fetch_text(prompt)
+                moves = parse_camera_moves(
+                    json.loads(markdown_parse(res)), len(batch)
+                )
+                break
+            except Exception as e:
+                logging.warning(
+                    f"focus-direction attempt {attempt} failed "
+                    f"at batch {i}: {type(e).__name__}: {str(e)[:160]}"
+                )
+                time.sleep(2)
 
+        if not moves:
+            # vision chain unavailable: degrade to a deterministic default so
+            # the storyboard keeps moving instead of crashing the draft
+            moves = [
+                {
+                    "direction": "middle",
+                    "move": "dolly-in" if (i + k) % 2 == 0 else "dolly-out",
+                    "intensity": "medium",
+                    "subject": "",
+                }
+                for k in range(len(batch))
+            ]
+        output.extend(moves)
         i += 4
 
     return output
 
 
+_shared_browser_manager: BrowserManager = None
+_shared_browser_lock = threading.Lock()
+
+
+def get_shared_browser_manager():
+    """Process-wide lazy browser so repeated visual calls skip the 2-5s
+    Firefox relaunch. Closed via atexit."""
+    global _shared_browser_manager
+    with _shared_browser_lock:
+        if _shared_browser_manager is None:
+            _shared_browser_manager = BrowserManager()
+            _shared_browser_manager.start()
+            atexit.register(_shared_browser_manager.stop)
+    return _shared_browser_manager
+
+
+DDGS_MIN_WIDTH = 500
+DDGS_MIN_HEIGHT = 300
+DDGS_MAX_ASPECT = 2.3
+DDGS_MAX_VETOES = 3
+
+
+ddgs_image_pick_prompt = """Is this image a good visual reference for the query? Reject if it is a cartoon/drawing/CGI, contains text overlay/logo/watermark/UI, is a collage or grid, tiny thumbnail, group shot, or does not match the query subject.
+Output a JSON object enclosed in ```json with keys: "ok": true/false, "reason": short.
+Query:
+"""
+
+
+def _ddgs_rank_and_pick(query, results):
+    """Filter + rank ddgs image metadata by semantic similarity to the query."""
+    valid = []
+    for r in results:
+        try:
+            w, h = int(r.get("width") or 0), int(r.get("height") or 0)
+        except Exception:
+            w, h = 0, 0
+        if w < DDGS_MIN_WIDTH or h < DDGS_MIN_HEIGHT:
+            continue
+        if not (1 / DDGS_MAX_ASPECT <= w / h <= DDGS_MAX_ASPECT):
+            continue
+        if not r.get("image"):
+            continue
+        valid.append(r)
+
+    if not valid:
+        return []
+
+    titles = [(r.get("title") or "") + " " + (r.get("source") or "") for r in valid]
+    try:
+        sims = text_embeddings.embedding_gemini_compare(query, titles)
+    except Exception as e:
+        logging.info(f"ddgs-image-search: embedding rank failed : {e}")
+        sims = []
+
+    for i, r in enumerate(valid):
+        r["_score"] = (sims[i] if i < len(sims) else 0.0) + min(
+            0.3, max(0, (int(r.get("width") or 0) - DDGS_MIN_WIDTH) / 4000)
+        )
+
+    valid.sort(key=lambda r: r["_score"], reverse=True)
+    return valid
+
+
+def ddgs_image_search(q, chatbot: Chatbot.ChatInterface = None):
+    """Fallback image search using ddgs metadata (no browser). Rate-limited by
+    DuckDuckGo, so only used when the visual browser path fails."""
+    try:
+        from ddgs import DDGS
+
+        results = DDGS().images(q, max_results=15, safesearch="off")
+        ranked = _ddgs_rank_and_pick(q, results)
+        logging.info(f"ddgs-image-search: {len(ranked)} ranked results for {q}")
+
+        veto_checks = 0
+        for r in ranked:
+            src = r.get("image")
+            try:
+                import requests as _requests
+
+                img_res = _requests.get(
+                    src,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) "
+                        "Gecko/20100101 Firefox/130.0"
+                    },
+                    timeout=10,
+                )
+                if img_res.status_code != 200 or len(img_res.content) < 5000:
+                    continue
+                img_bytes = img_res.content
+            except Exception as e:
+                logging.info(f"ddgs-image-search: fetch failed {src} : {e}")
+                continue
+
+            veto = False
+            if chatbot is not None and veto_checks < DDGS_MAX_VETOES:
+                veto_checks += 1
+                try:
+                    check_cb = new_summarizer_chatbot(chatbot)
+                    check_cb.new_conversation()
+                    prompt = Chatbot.Img(
+                        _bytes=img_bytes, text=ddgs_image_pick_prompt + q
+                    )
+                    out = markdown_parse(check_cb.fetch_text(prompt))
+                    parsed = json.loads(out)
+                    veto = parsed.get("ok") is False
+                    logging.info(
+                        f"ddgs-image-search: veto={veto} for {src} : {parsed.get('reason')}"
+                    )
+                except Exception as e:
+                    logging.info(f"ddgs-image-search: vision veto error : {e}")
+
+            if not veto:
+                return src, None
+    except Exception as e:
+        logging.error(f"ddgs-image-search: {e}")
+    return None, None
+
+
 @errors.log_ctx_errors
-def search(q, chatbot: Chatbot.ChatInterface):
-    browser_manager = BrowserManager()
+def search_visual(q, chatbot: Chatbot.ChatInterface):
+    browser_manager = get_shared_browser_manager()
     page = browser_manager.get_page()
     src = None
     val = {}
@@ -369,36 +782,72 @@ def search(q, chatbot: Chatbot.ChatInterface):
         logging.error(f"playwright-image-search: {e}")
     finally:
         page.close()
-        browser_manager.stop()
 
     return src, val.get("color")
 
 
+SUMMARIZE_CHATBOT = os.environ.get(
+    "SUMMARIZE_CHATBOT",
+    "gemini_rest#gemini-3.5-flash-lite, groq",
+)
+
+
+def new_summarizer_chatbot(fallback: Chatbot.ChatInterface = None):
+    """Dedicated cheap/fast chatbot for search-grounding summaries, independent
+    of the primary chatbot chain. A fresh instance per call avoids shared state
+    under concurrent summarization. Falls back to `fallback` if unavailable."""
+    try:
+        return Chatbot.ChatInterface(SUMMARIZE_CHATBOT)
+    except Exception as e:
+        logging.error(
+            f"summarizer chatbot '{SUMMARIZE_CHATBOT}' init failed: {e}, "
+            "falling back to caller chatbot"
+        )
+        return fallback
+
+
+@errors.log_ctx_errors
+def search(q, chatbot: Chatbot.ChatInterface):
+    """Primary: browser-based visual search. Fallback: ddgs metadata search
+    (keyless, no browser, but rate-limited)."""
+    src, color = search_visual(q, chatbot)
+    if src:
+        return src, color
+
+    logging.info(f"search: visual path failed for {q}, trying ddgs fallback")
+    return ddgs_image_search(q, chatbot)
+
+
 @errors.log_ctx_errors
 def summarize_page(chatbot: Chatbot.ChatInterface, link, topic, word_limit=100):
-    browser_manager = BrowserManager()
-    page = browser_manager.get_page()
-
+    """Fetch a page's text (Lightpanda markdown dump, bs4 fallback) and summarize
+    it with the dedicated summarizer chatbot. No browser screenshots / vision LLM
+    needed for context."""
     try:
-        page.goto(link)
-        page.evaluate("window.scrollBy(0, 200);")
+        text = fetch_page_text(link)
+        if not text:
+            logging.info(f"summarize_page: no text fetched for {link}")
+            return ""
 
-        img_bytes = page.screenshot()
+        text = text[:LIGHTPANDA_CONTEXT_CHARS]
 
-        task = f"Give a topic: {topic}, create a summary around it using the below image, add only revelant information with dates, outcomes, results using max {word_limit} words. Format as a single paragraph and enclose it with ```summary"
-        prompt = Chatbot.Img(_bytes=img_bytes, text=task)
-        res = chatbot.fetch_text(prompt)
+        task = (
+            f"Give a topic: {topic}, create a summary around it using the below page text, "
+            f"add only relevant information with dates, outcomes, results using max {word_limit} words. "
+            f"Ignore navigation menus, tables of contents and unrelated sections. "
+            f"Output an empty summary only if the page text has nothing at all related to the topic. "
+            f"Format as a single paragraph and enclose it with ```summary\n\nPage text:\n{text}"
+        )
+        sum_chatbot = new_summarizer_chatbot(chatbot)
+        sum_chatbot.new_conversation()
+        res = sum_chatbot.fetch_text(task)
 
         try:
-            return markdown_parser(res, lang="summary")
-        except:
+            return markdown_parse(res, lang="summary")
+        except Exception:
             return res
-
     except Exception as e:
         raise e
-    finally:
-        page.close()
-        browser_manager.stop()
 
 
 if __name__ == "__main__":

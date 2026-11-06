@@ -145,12 +145,31 @@ draft_parser.add_argument(
     "image_engine", type=str, required=False, help="Image Gen Model!"
 )
 draft_parser.add_argument(
+    "visual_engine",
+    type=str,
+    required=False,
+    help="Visual asset engine: image (default) or lottie",
+)
+draft_parser.add_argument(
     "avatar_engine", type=str, required=False, help="Image Gen Model!"
 )
 draft_parser.add_argument(
     "video_engine", type=str, required=False, help="Video Gen Model!"
 )
 draft_parser.add_argument("gen_video", type=bool, required=False, help="Generate Video")
+draft_parser.add_argument(
+    "render_engine",
+    type=str,
+    required=False,
+    choices=["remotion", "ffmpeg"],
+    help="Render engine: remotion (Lambda, full-featured) or ffmpeg (fast local)",
+)
+draft_parser.add_argument(
+    "duration",
+    type=float,
+    required=False,
+    help="Target total runtime of the draft screenplay in seconds",
+)
 draft_parser.add_argument(
     "character_ref", type=dict, required=False, help="Image to be used as Reference!"
 )
@@ -192,6 +211,12 @@ draft_parser.add_argument(
     type=dict,
     required=False,
     help="Map voice for each character",
+)
+draft_parser.add_argument(
+    "auto_voices",
+    type=bool,
+    required=False,
+    help="Let the pipeline auto-pick a distinct fitting voice per character",
 )
 draft_parser.add_argument(
     "ui_order", type=dict, required=False, help="Change image+audio+text ordering!"

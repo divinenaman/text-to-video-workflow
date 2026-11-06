@@ -185,6 +185,12 @@ def init_baasha():
         baasha_pipeline_config.set(
             "primary_chatbot", config["PREFS"]["PRIMARY_CHATBOT"]
         )
+        baasha_pipeline_config.set(
+            "chatbot_codegen", config["PREFS"].get("CHATBOT_CODEGEN", "")
+        )
+        baasha_pipeline_config.set(
+            "chatbot_judge", config["PREFS"].get("CHATBOT_JUDGE", "")
+        )
 
     # Setup local cache
     local_cache = os.path.join(os.path.dirname(__file__), "tmp")
@@ -225,12 +231,16 @@ def init_baasha():
             for k in config["SECRETS"].get("OPENROUTER_KEY", "").split(",")
             if k.strip()
         ]
-        baasha_pipeline_auth_config["cloudflare_token"] = (
-            config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").strip()
-        )
-        baasha_pipeline_auth_config["cloudflare_account_id"] = (
-            config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").strip()
-        )
+        baasha_pipeline_auth_config["cloudflare_token"] = [
+            k.strip()
+            for k in config["SECRETS"].get("CLOUDFLARE_API_TOKEN", "").split(",")
+            if k.strip()
+        ]
+        baasha_pipeline_auth_config["cloudflare_account_id"] = [
+            k.strip()
+            for k in config["SECRETS"].get("CLOUDFLARE_ACCOUNT_ID", "").split(",")
+            if k.strip()
+        ]
         baasha_pipeline_auth_config["pollinations_key"] = (
             config["SECRETS"].get("POLLINATIONS_KEY", "").strip()
         )

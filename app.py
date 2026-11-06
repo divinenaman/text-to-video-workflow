@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     load_prod_env(app)
 
-    # load voices
-    # VoiceResource.preload_voices()
+    # Keep ElevenLabs voices available to both the UI selector and auto-casting.
+    VoiceResource.preload_voices()
 
     app.run(debug=debug, host="0.0.0.0")
