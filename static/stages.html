@@ -11,19 +11,21 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --primary: #ffffff;
-            --secondary: #94a3b8;
-            --accent: #8b5cf6;
-            --accent-hover: #7c3aed;
-            --accent-glow: rgba(139, 92, 246, 0.3);
-            --bg: #030712;
-            --card-bg: rgba(17, 24, 39, 0.45);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(255, 255, 255, 0.16);
-            --emerald: #10b981;
-            --sky: #38bdf8;
-            --rose: #f43f5e;
-            --gold: #f59e0b;
+            --primary: #1a1a1a;
+            --secondary: #5d5b52;
+            --accent: #0041ca;
+            --accent-hover: #0038a6;
+            --accent-glow: rgba(0, 65, 202, 0.12);
+            --bg: #f4f1e7;
+            --bg-2: #efe9dc;
+            --card-bg: rgba(255,255,255,0.72);
+            --border: #d9d5c8;
+            --border-hover: #beb8a7;
+            --emerald: #0f766e;
+            --sky: #0f4cb1;
+            --rose: #b91c1c;
+            --gold: #b45309;
+            --ink: #1a1a1a;
         }
 
         * {
@@ -38,10 +40,45 @@
             color: var(--primary);
             min-height: 100vh;
             overflow-x: hidden;
-            background-image:
-                radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.12) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(56, 189, 248, 0.15) 0%, transparent 40%);
             -webkit-font-smoothing: antialiased;
+        }
+
+        .status-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            background: #f7f3e7;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 20px rgba(17, 17, 17, 0.04);
+        }
+
+        .status-banner__label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.73rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+        }
+
+        .status-banner__title {
+            font-size: clamp(1.05rem, 1.6vw, 1.35rem);
+            font-weight: 700;
+            color: var(--primary);
+            margin-top: 0.15rem;
+        }
+
+        .status-banner__meta {
+            font-size: 0.82rem;
+            color: var(--secondary);
+            text-align: right;
+            line-height: 1.5;
         }
 
         h1,
@@ -76,24 +113,22 @@
         }
 
         .logo-icon {
-            background: linear-gradient(135deg, var(--accent) 0%, #6366f1 100%);
+            background: var(--accent);
             width: 38px;
             height: 38px;
             border-radius: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
-            box-shadow: 0 8px 16px rgba(139, 92, 246, 0.3);
+            border: 1px solid var(--ink);
+            box-shadow: none;
         }
 
         .logo {
             font-size: 1.75rem;
             font-weight: 800;
             letter-spacing: -0.03em;
-            background: linear-gradient(to right, #ffffff, #c084fc);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--primary);
         }
 
         .draft-info {
@@ -124,7 +159,7 @@
             gap: 1rem;
             margin-bottom: 3rem;
             position: relative;
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.55);
             padding: 0.75rem;
             border-radius: 16px;
             border: 1px solid var(--border);
@@ -149,8 +184,8 @@
         }
 
         .step:hover {
-            background: rgba(255, 255, 255, 0.04);
-            border-color: rgba(255, 255, 255, 0.05);
+            background: #f7f3e7;
+            border-color: var(--border);
         }
 
         .step-circle {
@@ -168,15 +203,15 @@
         }
 
         .step.active {
-            background: rgba(139, 92, 246, 0.1);
-            border-color: rgba(139, 92, 246, 0.25);
+            background: #edf3ff;
+            border-color: rgba(0, 65, 202, 0.24);
         }
 
         .step.active .step-circle {
             color: #ffffff;
             background: var(--accent);
-            border-color: var(--accent);
-            box-shadow: 0 0 12px var(--accent-glow);
+            border-color: var(--ink);
+            box-shadow: none;
         }
 
         .step.completed .step-circle {
@@ -204,14 +239,12 @@
 
         /* Glass Content Card */
         .content-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            background: rgba(255,255,255,0.7);
             border: 1px solid var(--border);
             border-radius: 28px;
             padding: 3rem;
             min-height: 520px;
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
+            box-shadow: 0 8px 20px rgba(17, 17, 17, 0.05);
             position: relative;
         }
 
@@ -248,14 +281,14 @@
             grid-template-columns: 1fr 1fr;
             gap: 2rem;
             padding: 2rem;
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.56);
             border-radius: 20px;
             border: 1px solid var(--border);
             transition: all 0.25s ease;
         }
 
         .screenplay-card:hover {
-            background: rgba(255, 255, 255, 0.04);
+            background: #fffef9;
             border-color: var(--border-hover);
         }
 
@@ -315,17 +348,17 @@
         .scene-text {
             font-size: 0.95rem;
             line-height: 1.6;
-            color: #f1f5f9;
+            color: var(--primary);
         }
 
         .dialogue-bubble {
-            background: rgba(139, 92, 246, 0.08);
-            border: 1px solid rgba(139, 92, 246, 0.12);
+            background: #edf3ff;
+            border: 1px solid rgba(0, 65, 202, 0.16);
             border-radius: 12px;
             padding: 1rem;
             font-size: 0.95rem;
             line-height: 1.5;
-            color: #e2e8f0;
+            color: var(--primary);
             position: relative;
         }
 
@@ -347,7 +380,7 @@
         }
 
         .character-card {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.7);
             border-radius: 20px;
             overflow: hidden;
             border: 1px solid var(--border);
@@ -408,7 +441,7 @@
         .character-info h3 {
             font-size: 1.2rem;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--primary);
         }
 
         .character-description {
@@ -425,7 +458,7 @@
         }
 
         .directive-card {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.65);
             border: 1px solid var(--border);
             border-radius: 20px;
             padding: 1.75rem 2rem;
@@ -439,7 +472,7 @@
             justify-content: space-between;
             align-items: center;
             padding-bottom: 0.75rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--border);
         }
 
         .directive-body {
@@ -465,11 +498,11 @@
         .directive-prompt-box p {
             font-size: 0.95rem;
             line-height: 1.6;
-            color: #f1f5f9;
+            color: var(--primary);
         }
 
         .directive-meta-panel {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(255, 255, 255, 0.62);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 1rem;
@@ -579,7 +612,7 @@
 
         /* Buttons & Actions */
         .action-btn {
-            background: linear-gradient(135deg, var(--accent) 0%, #6366f1 100%);
+            background: var(--accent);
             color: white;
             padding: 0.85rem 1.75rem;
             border-radius: 12px;
@@ -589,16 +622,15 @@
             gap: 0.6rem;
             font-weight: 600;
             font-size: 0.9rem;
-            transition: all 0.25s;
-            border: none;
+            transition: all 0.2s;
+            border: 1px solid var(--ink);
             cursor: pointer;
-            box-shadow: 0 8px 20px -6px rgba(139, 92, 246, 0.5);
+            box-shadow: none;
         }
 
         .action-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 24px -4px rgba(139, 92, 246, 0.6);
-            background: linear-gradient(135deg, #9333ea 0%, #4f46e5 100%);
+            background: var(--accent-hover);
+            transform: translateY(-1px);
         }
 
         .back-btn {
@@ -624,13 +656,11 @@
 
         /* Log Console styling */
         .log-console {
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
+            background: #f8f6f0;
             border: 1px solid var(--border);
             border-radius: 20px;
             margin-top: 2.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 8px 24px rgba(17, 17, 17, 0.04);
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -642,8 +672,8 @@
             justify-content: space-between;
             align-items: center;
             padding: 0.95rem 1.5rem;
-            background: rgba(30, 41, 59, 0.3);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            background: #f5f2e9;
+            border-bottom: 1px solid var(--border);
         }
 
         .log-title-wrapper {
@@ -657,7 +687,7 @@
             font-size: 0.95rem;
             font-weight: 600;
             letter-spacing: 0.02em;
-            color: #ffffff;
+            color: var(--primary);
         }
 
         .status-dot {
@@ -692,7 +722,7 @@
 
         .log-btn {
             background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border);
             color: var(--secondary);
             padding: 0.35rem 0.75rem;
             border-radius: 8px;
@@ -705,20 +735,20 @@
         }
 
         .log-btn:hover {
-            background: rgba(255, 255, 255, 0.04);
-            color: #ffffff;
-            border-color: rgba(255, 255, 255, 0.15);
+            background: #fffef9;
+            color: var(--primary);
+            border-color: var(--border-hover);
         }
 
         .log-body {
             height: 200px;
             padding: 1.5rem;
-            background: #020617;
+            background: #f4f0ea;
             overflow-y: auto;
             font-family: 'Courier New', Courier, monospace;
             font-size: 0.8rem;
             line-height: 1.6;
-            color: var(--sky);
+            color: #1e3a8a;
             white-space: pre-wrap;
             scroll-behavior: smooth;
         }
@@ -811,6 +841,14 @@
             </div>
         </header>
 
+        <div class="status-banner" id="status-banner">
+            <div>
+                <div class="status-banner__label"><span class="status-dot active"></span> Pipeline status</div>
+                <div class="status-banner__title" id="status-banner-title">Preparing storyboard</div>
+            </div>
+            <div class="status-banner__meta" id="status-banner-meta">Waiting for draft data</div>
+        </div>
+
         <button class="back-btn" id="global-back-btn" style="display: none; margin-bottom: 2rem;">
             <i data-lucide="arrow-left"></i> Back to Idea
         </button>
@@ -837,7 +875,7 @@
             <div id="welcome-view" class="empty-state"
                 style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;">
                 <i data-lucide="sparkles" style="width: 4rem; height: 4rem; stroke: var(--accent);"></i>
-                <h2 style="font-size: 1.75rem; font-weight: 700; color: #ffffff;">No Active Storyboard</h2>
+                <h2 style="font-size: 1.75rem; font-weight: 700; color: var(--primary);">No Active Storyboard</h2>
                 <p style="color: var(--secondary); max-width: 460px; font-size: 0.95rem; line-height: 1.6;">
                     Please trigger a new storyboard generation in the Studio prompt interface to stream logs and
                     visualize assets in real-time.
@@ -877,10 +915,6 @@
                     style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem; flex-wrap: wrap; gap: 1rem;">
                     <h2 style="font-size: 1.75rem;">Creative Assets Grid</h2>
                     <div style="display: flex; align-items: center; gap: 1rem;">
-                        <button id="gen-video-btn" onclick="triggerGenVideo()"
-                            style="display: none; align-items: center; gap: 0.5rem; background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%); color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);">
-                            <i data-lucide="video" style="width: 16px; height: 16px;"></i> Generate Scene Videos
-                        </button>
                         <div
                             style="display: flex; gap: 0.25rem; background: rgba(255, 255, 255, 0.03); padding: 0.25rem; border-radius: 12px; border: 1px solid var(--border);">
                             <button id="tab-visuals-images" onclick="switchVisualsTab('images')"
@@ -898,10 +932,7 @@
             <!-- Stage 4: Upscaling -->
             <div class="stage-view" id="stage-4">
                 <h2 style="margin-bottom: 2rem; font-size: 1.75rem;">High Fidelity Upscaling</h2>
-                <div class="empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
-                    <i data-lucide="aperture" class="animate-spin" style="width: 3rem; height: 3rem; stroke: var(--accent);"></i>
-                    <p>Generating high-fidelity 9:16 cinematic assets...</p>
-                </div>
+                <div id="upscale-content"></div>
             </div>
 
             <!-- Stage 5: Audio / Preview -->
@@ -978,6 +1009,12 @@
             };
         }
 
+        function getStageViewForDraft(stage) {
+            return STAGES.find((item, index) =>
+                item.id <= stage && (STAGES[index + 1] ? STAGES[index + 1].id > stage : true)
+            ) || STAGES[0];
+        }
+
         async function fetchDraft() {
             const { idea_id, version } = getQueryParams();
             if (!idea_id) {
@@ -1017,7 +1054,7 @@
 
                 // Auto advance navigate to target active stage
                 const stage = currentDraft.stage === -1 ? 0 : currentDraft.stage;
-                const targetStage = STAGES.find(s => s.id <= stage && STAGES[STAGES.indexOf(s) + 1]?.id > stage) || STAGES[0];
+                const targetStage = getStageViewForDraft(stage);
                 navigateToStage(targetStage.id);
 
                 document.getElementById('loading-overlay').style.display = 'none';
@@ -1035,6 +1072,57 @@
             if (currentDraft.voice_id) verInfo += ` | Primary Voice: ${currentDraft.voice_id}`;
             if (currentDraft.style_id) verInfo += ` | Custom Style: ${currentDraft.style_id}`;
             document.getElementById('draft-id-ver').textContent = verInfo;
+            updateRenderStatusBanner();
+        }
+
+        function updateRenderStatusBanner() {
+            const bannerTitle = document.getElementById('status-banner-title');
+            const bannerMeta = document.getElementById('status-banner-meta');
+            if (!bannerTitle || !bannerMeta || !currentDraft) return;
+
+            const stage = Number(currentDraft.stage ?? 0);
+            const targetStage = Number(currentDraft.target_stage ?? stage);
+            const isQueued = stage >= 6 && stage < 8 && !currentDraft.generated_video;
+            const isFinal = currentDraft.generated_video;
+
+            if (stage === 8) {
+                bannerTitle.textContent = 'Final render failed';
+                bannerMeta.textContent = 'Check the execution log, then retry the render';
+                return;
+            }
+
+            if (isFinal) {
+                bannerTitle.textContent = 'Master export ready';
+                bannerMeta.textContent = 'Final video available for review and download';
+                return;
+            }
+
+            if (isQueued) {
+                bannerTitle.textContent = 'Final render in progress';
+                bannerMeta.textContent = `FFmpeg is compiling the master video · stage ${stage}`;
+                return;
+            }
+
+            if (stage >= 5 && stage < 6) {
+                bannerTitle.textContent = 'Production assembly';
+                bannerMeta.textContent = 'Audio and render settings are being finalized';
+                return;
+            }
+
+            if (stage >= 3 && stage < 5) {
+                bannerTitle.textContent = 'Visual pipeline active';
+                bannerMeta.textContent = `Assets are being built toward stage ${Math.max(stage, targetStage || stage)}`;
+                return;
+            }
+
+            if (stage >= 1 && stage < 3) {
+                bannerTitle.textContent = 'Reviewing story and direction';
+                bannerMeta.textContent = 'Director review is in progress';
+                return;
+            }
+
+            bannerTitle.textContent = 'Preparing storyboard';
+            bannerMeta.textContent = 'Awaiting draft generation';
         }
 
         function renderStepper() {
@@ -1106,9 +1194,41 @@
                 case 1.5: renderGrids(); break;
                 case 2: renderPrompts(); break;
                 case 3: renderImages(); break;
-                case 4: renderProduction(); break;
-                case 8: renderFinal(); break;
+                case 4: renderUpscale(); break;
+                case 5: renderProduction(); break;
+                case 9: renderFinal(); break;
             }
+        }
+
+        function renderUpscale() {
+            const content = document.getElementById('upscale-content');
+            const targetStage = Number(currentDraft.target_stage || 0);
+
+            if (currentDraft.stage < 4 || currentDraft.stage < targetStage) {
+                const isRunning = currentDraft.stage < targetStage;
+                content.innerHTML = `
+                    <div class="empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;">
+                        <i data-lucide="aperture" class="${isRunning ? 'animate-spin' : ''}" style="width: 3rem; height: 3rem; stroke: var(--accent);"></i>
+                        <p>${isRunning ? 'Generating the requested assets…' : 'High-fidelity upscaling has not started yet.'}</p>
+                    </div>
+                `;
+            } else if (currentDraft.stage === 4 && targetStage <= 4) {
+                content.innerHTML = `
+                    <div class="audio-preview-panel" style="text-align: center;">
+                        <h3 style="margin-bottom: 0.5rem;">Visual assets are ready</h3>
+                        <p style="color: var(--secondary); margin-bottom: 1.25rem;">Continue to generate audio and assemble the production timeline.</p>
+                        <button class="action-btn" onclick="advanceStage(5, this)">Start Audio &amp; Production Stage</button>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="audio-preview-panel" style="text-align: center;">
+                        <h3 style="margin-bottom: 0.5rem;">High-fidelity stage complete</h3>
+                        <button class="action-btn" onclick="navigateToStage(5)">View Production Stage</button>
+                    </div>
+                `;
+            }
+            lucide.createIcons();
         }
 
         function renderStory() {
@@ -1138,7 +1258,7 @@
                             ${cinematic.location_id ? `<span class="meta-badge badge-location" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;"><i data-lucide="map-pin" style="width: 10px; height: 10px;"></i> ${cinematic.location_id}</span>` : ''}
                         </div>
                         <p class="scene-text" style="font-weight: 500;">${cinematic.motion_prompt || txt}</p>
-                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem; font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
+                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.5rem; font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
                     </div>
                 `;
 
@@ -1165,14 +1285,14 @@
             // If paused at Stage 0 for review, show the Review Action Bar
             if (currentDraft.stage === 0) {
                 content.innerHTML += `
-                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: #edf3ff; border: 1px solid rgba(0, 65, 202, 0.24); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
                         <div>
-                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode</h4>
+                            <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Director's Review Mode</h4>
                             <p style="color: var(--text-muted); font-size: 0.85rem;">You can click directly on the dialogue text above to edit sentences. Save edits or approve to continue to Casting.</p>
                         </div>
                         <div style="display: flex; gap: 1rem;">
-                            <button onclick="patchStage('story')" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">Save Script Edits</button>
-                            <button onclick="advanceStage(1)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Cast Characters</button>
+                            <button onclick="patchStage('story')" style="background: #fffef9; color: var(--primary); border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">Save Script Edits</button>
+                            <button onclick="advanceStage(1)" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Cast Characters</button>
                         </div>
                     </div>
                 `;
@@ -1215,7 +1335,7 @@
                             </div>
                             <div class="character-info">
                                 <h3>${c.name} (Source)</h3>
-                                <p class="character-description">Real-world search query:<br><strong style="color: #cbd5e1; font-style: italic;">"${c.search || 'Visual grounding reference'}"</strong></p>
+                                <p class="character-description">Real-world search query:<br><strong style="color: var(--primary); font-style: italic;">"${c.search || 'Visual grounding reference'}"</strong></p>
                             </div>
                         </div>
                         ` : ''}
@@ -1238,13 +1358,13 @@
                 // If paused at Stage 1 for review, show the Review Action Bar
                 if (currentDraft.stage === 1) {
                     html += `
-                        <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
+                        <div style="margin-top: 2rem; padding: 1.5rem; background: #edf3ff; border: 1px solid rgba(0, 65, 202, 0.24); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
                             <div>
-                                <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Cast & Elements</h4>
+                                <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Director's Review Mode: Cast & Elements</h4>
                                 <p style="color: var(--text-muted); font-size: 0.85rem;">Review visual blueprints and character models. Approve to generate scene directives.</p>
                             </div>
                             <div style="display: flex; gap: 1rem;">
-                                <button onclick="advanceStage(2)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
+                                <button onclick="advanceStage(2)" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
                             </div>
                         </div>
                     `;
@@ -1293,7 +1413,7 @@
                                 <h3 style="font-size: 1.1rem;">${c.name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</h3>
                                 <p class="character-description" style="margin-bottom: 0.5rem;">One-shot generated structural spatial layout constraint.</p>
                                 ${c.range && videoData.original_image_descriptions ? `
-                                    <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; font-size: 0.85rem; color: #cbd5e1; max-height: 250px; overflow-y: auto;">
+                                    <div style="background: #f2f0e8; padding: 1rem; border-radius: 8px; font-size: 0.85rem; color: var(--primary); max-height: 250px; overflow-y: auto;">
                                         <h4 style="color: var(--accent); margin-bottom: 0.5rem; font-size: 0.75rem; text-transform: uppercase; font-weight: 700;">Prompt Sequence</h4>
                                         <ul style="padding-left: 1rem; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
                                             ${videoData.original_image_descriptions.slice(c.range[0], c.range[1]).map((p, i) => `<li style="line-height: 1.4;"><strong>Panel ${c.range[0] + i + 1}:</strong> ${p}</li>`).join('')}
@@ -1307,7 +1427,7 @@
 
                 let html = `
                     <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; margin-bottom: 1rem;">
-                        <button onclick="toggleRawGrids()" style="background: rgba(255,255,255,0.05); color: white; border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                        <button onclick="toggleRawGrids()" style="background: #fffef9; color: var(--primary); border: 1px solid var(--border); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
                             <i data-lucide="${showRawGrids ? 'eye-off' : 'eye'}" style="width: 14px; height: 14px;"></i>
                             ${showRawGrids ? 'Hide Raw Grids' : 'Show Raw Alternate Grids'}
                         </button>
@@ -1324,7 +1444,7 @@
                                 </div>
                             </div>
                             <div>
-                                <h3 style="margin-bottom: 1rem; color: #94a3b8; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">Raw (Discarded) Grids</h3>
+                                <h3 style="margin-bottom: 1rem; color: var(--secondary); font-size: 1.1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">Raw (Discarded) Grids</h3>
                                 <div class="character-grid" style="grid-template-columns: 1fr; gap: 1.5rem;">
                                     ${rawGrids.map(c => renderCard(c, 'Raw Grid', 'rgba(148, 163, 184, 0.9)')).join('')}
                                 </div>
@@ -1337,13 +1457,13 @@
                 // If paused at Stage 1 for review, show the Review Action Bar
                 if (currentDraft.stage === 1) {
                     html += `
-                        <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
+                        <div style="margin-top: 2rem; padding: 1.5rem; background: #edf3ff; border: 1px solid rgba(0, 65, 202, 0.24); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; grid-column: 1 / -1;">
                             <div>
-                                <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Spatial Grids</h4>
+                                <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Director's Review Mode: Spatial Grids</h4>
                                 <p style="color: var(--text-muted); font-size: 0.85rem;">Review spatial generation layouts. Approve to generate individual scene directives.</p>
                             </div>
                             <div style="display: flex; gap: 1rem;">
-                                <button onclick="advanceStage(2)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
+                                <button onclick="advanceStage(2)" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Generate Directives</button>
                             </div>
                         </div>
                     `;
@@ -1372,8 +1492,8 @@
                             </h3>
                             <span class="meta-badge" style="background: rgba(34,197,94,0.15); color: #22c55e;">${prompts.length} scene${prompts.length === 1 ? '' : 's'}</span>
                         </div>
-                        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.5; margin-bottom: 0.75rem;">Copies one instruction block plus every scene prompt in order. Paste it into ChatGPT or any image agent and it will generate all ${prompts.length} image${prompts.length === 1 ? '' : 's'} in sequence.</p>
-                        <button id="copy-all-prompts-btn" onclick="copyCombinedImagePrompt()" style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+                        <p style="font-size: 0.9rem; color: var(--secondary); line-height: 1.5; margin-bottom: 0.75rem;">Copies one instruction block plus every scene prompt in order. Paste it into ChatGPT or any image agent and it will generate all ${prompts.length} image${prompts.length === 1 ? '' : 's'} in sequence.</p>
+                        <button id="copy-all-prompts-btn" onclick="copyCombinedImagePrompt()" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
                             <i data-lucide="copy" style="width: 14px; height: 14px;"></i> Copy All Image Prompts
                         </button>
                     </div>
@@ -1391,7 +1511,7 @@
                             </h3>
                             <span class="meta-badge" style="background: rgba(139, 92, 246, 0.15); color: var(--accent);">Dynamic Sref Description</span>
                         </div>
-                        <p style="font-size: 0.95rem; line-height: 1.6; color: #f1f5f9; font-style: italic;">"${styleDesc}"</p>
+                        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--primary); font-style: italic;">"${styleDesc}"</p>
                     </div>
                 `;
             }
@@ -1406,7 +1526,7 @@
                             </h3>
                             <span class="meta-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--sky);">Consistency Prompt</span>
                         </div>
-                        <p style="font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; background: rgba(0,0,0,0.3); padding: 1.25rem; border-radius: 12px; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.03);">${gridPrompt}</p>
+                        <p style="font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; background: #f2f0e8; padding: 1.25rem; border-radius: 12px; color: var(--primary); border: 1px solid var(--border);">${gridPrompt}</p>
                     </div>
                 `;
             }
@@ -1426,17 +1546,17 @@
                 return `
                     <div class="directive-card">
                         <div class="directive-header">
-                            <h4 style="font-weight: 700; color: #ffffff;">Storyboard Panel ${i + 1}</h4>
+                            <h4 style="font-weight: 700; color: var(--primary);">Storyboard Panel ${i + 1}</h4>
                             <span class="meta-badge badge-scene">Shot #${i + 1} Directives</span>
                         </div>
                         <div class="directive-body">
                             <div class="directive-prompt-box">
                                 <label>Image Composition Prompt</label>
-                                <p style="font-style: italic; color: #ffffff;">"${text}"</p>
+                                <p style="font-style: italic; color: var(--primary);">"${text}"</p>
                                 ${motionPrompt ? `
                                     <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.05);">
                                         <label style="color: var(--accent);">Motion Directive</label>
-                                        <p style="color: #cbd5e1;">${motionPrompt}</p>
+                                        <p style="color: var(--secondary);">${motionPrompt}</p>
                                     </div>
                                 ` : ''}
                             </div>
@@ -1445,7 +1565,7 @@
                                 ${priorShotIndex !== undefined && priorShotIndex !== null ? `
                                     <div style="font-size: 0.8rem; background: rgba(139,92,246,0.08); padding: 0.5rem; border-radius: 6px; border: 1px solid rgba(139,92,246,0.12);">
                                         <div style="font-weight: 700; color: var(--accent); font-size: 0.7rem; margin-bottom: 0.2rem;">Continuity Cut Ref: Shot #${priorShotIndex}</div>
-                                        ${transitionPrompt ? `<div style="font-style: italic; color: #94a3b8; font-size: 0.75rem;">"${transitionPrompt}"</div>` : ''}
+                                        ${transitionPrompt ? `<div style="font-style: italic; color: var(--secondary); font-size: 0.75rem;">"${transitionPrompt}"</div>` : ''}
                                     </div>
                                 ` : '<div style="font-size: 0.8rem; color: var(--secondary);">Establishing / Cut Beat</div>'}
                             </div>
@@ -1457,13 +1577,13 @@
             // If paused at Stage 2 for review, show the Review Action Bar
             if (currentDraft.stage === 2) {
                 html += `
-                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: #edf3ff; border: 1px solid rgba(0, 65, 202, 0.24); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
                         <div>
-                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode</h4>
+                            <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Director's Review Mode</h4>
                             <p style="color: var(--text-muted); font-size: 0.85rem;">Review the generated scene prompts and visual directives before heavy image rendering.</p>
                         </div>
                         <div style="display: flex; gap: 1rem;">
-                            <button onclick="advanceStage(3)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Render Images</button>
+                            <button onclick="advanceStage(3)" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Render Images</button>
                         </div>
                     </div>
                 `;
@@ -1572,9 +1692,21 @@
                             <div class="badge-row" style="margin-bottom: 0.5rem;">
                                 <span class="meta-badge badge-character"><i data-lucide="mic" style="width: 10px; height: 10px;"></i> ${charName || 'Narrator'}</span>
                             </div>
-                            <p style="font-style: italic; font-weight: 400; color: #e2e8f0;">"${txt}"</p>
+                            <p style="font-style: italic; font-weight: 400; color: var(--primary);">"${txt}"</p>
                         </div>
                     `;
+
+                const audioEntry = Array.isArray(videoData.audios) ? videoData.audios[i] : null;
+                const audioUrl = Array.isArray(audioEntry) ? audioEntry[0] : null;
+                const hasAudio = typeof audioUrl === 'string' && audioUrl.trim() && audioUrl !== '-1';
+                const audioBlock = hasAudio ? `
+                    <div class="dialogue-bubble" style="padding: 0.8rem 1rem;">
+                        <div class="badge-row" style="margin-bottom: 0.5rem;">
+                            <span class="meta-badge badge-character"><i data-lucide="volume-2" style="width: 10px; height: 10px;"></i> Voice Preview</span>
+                        </div>
+                        <audio controls src="${audioUrl}" style="width: 100%;"></audio>
+                    </div>
+                ` : '';
 
                 const rightCol = `
                     <div class="screenplay-audio" style="flex: 2.5; display: flex; flex-direction: column; justify-content: center; gap: 1rem;">
@@ -1584,13 +1716,14 @@
                             ${cinematic.shot_type ? `<span class="meta-badge badge-type" style="background: rgba(234, 179, 8, 0.15); color: #facc15;"><i data-lucide="camera" style="width: 10px; height: 10px;"></i> ${cinematic.shot_type}</span>` : ''}
                             ${cinematic.location_id ? `<span class="meta-badge badge-location" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;"><i data-lucide="map-pin" style="width: 10px; height: 10px;"></i> ${cinematic.location_id}</span>` : ''}
                         </div>
-                        <p class="scene-text" style="font-weight: 500; font-size: 0.95rem; color: #cbd5e1;">
+                        <p class="scene-text" style="font-weight: 500; font-size: 0.95rem; color: var(--primary);">
                             ${videoData.original_image_descriptions && videoData.original_image_descriptions[i]
                         ? videoData.original_image_descriptions[i]
                         : (Array.isArray(currentDraft.image_descriptions?.[i]) ? currentDraft.image_descriptions[i][0] : currentDraft.image_descriptions?.[i]) || txt}
                         </p>
                         ${dialogueBlock}
-                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: #94a3b8; font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
+                        ${audioBlock}
+                        ${cinematic.transition ? `<p style="font-size: 0.75rem; color: var(--secondary); font-style: italic;"><i data-lucide="scissors" style="width: 12px; height: 12px; display: inline; vertical-align: middle;"></i> Transition: ${cinematic.transition}</p>` : ''}
                     </div>
                 `;
 
@@ -1600,13 +1733,13 @@
             // If paused at Stage 3 for review, show the Review Action Bar
             if (currentDraft.stage === 3) {
                 content.innerHTML += `
-                    <div style="margin-top: 2rem; padding: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px solid var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="margin-top: 2rem; padding: 1.5rem; background: #edf3ff; border: 1px solid rgba(0, 65, 202, 0.24); border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
                         <div>
-                            <h4 style="color: white; margin-bottom: 0.25rem;">Director's Review Mode: Visual Assets</h4>
+                            <h4 style="color: var(--primary); margin-bottom: 0.25rem;">Director's Review Mode: Visual Assets</h4>
                             <p style="color: var(--text-muted); font-size: 0.85rem;">Review the rendered scene visuals. You can approve to proceed to final assembly.</p>
                         </div>
                         <div style="display: flex; gap: 1rem;">
-                            <button onclick="advanceStage(5)" style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Assemble Media</button>
+                            <button onclick="advanceStage(5)" style="background: var(--accent); color: white; border: 1px solid var(--ink); padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;">Approve & Assemble Media</button>
                         </div>
                     </div>
                 `;
@@ -1633,6 +1766,9 @@
                 video_engine: "start_end_framing",
                 convert_to_video: convertToVideo
             };
+
+            const engineSel = document.getElementById('render-engine-select');
+            if (engineSel && engineSel.value) payload.render_engine = engineSel.value;
 
             const btn = document.getElementById('gen-video-btn');
             const originalContent = btn.innerHTML;
@@ -1712,6 +1848,51 @@
                 html += '<p class="empty-state">Audio compositions and timeline sync blueprints not yet compiled.</p>';
             }
 
+            const targetStage = Number(currentDraft.target_stage || 0);
+            const renderReady = currentDraft.stage === 5 && !currentDraft.generated_video;
+            if (renderReady) {
+                const defaultRenderEngine = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+                    ? 'ffmpeg'
+                    : (videoData?.render_engine || 'remotion');
+                html += `
+                    <div class="audio-preview-panel" style="text-align: center; border-color: rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.03);">
+                        <div style="display: inline-flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem;">
+                            <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i> Render launch ready
+                        </div>
+                        <h3 style="margin-bottom: 0.5rem;">Ready to render</h3>
+                        <p style="color: var(--secondary); margin-bottom: 1.25rem;">${configUrl ? 'Start the final video render when you’re ready.' : 'The draft is ready to assemble into a final video export.'}</p>
+                        <label for="final-render-engine" style="display: block; color: var(--secondary); margin-bottom: 0.5rem;">Render engine</label>
+                        <select id="final-render-engine" class="field-select" style="max-width: 320px; margin: 0 auto 1rem;">
+                            <option value="ffmpeg" ${defaultRenderEngine === 'ffmpeg' ? 'selected' : ''}>FFmpeg (local)</option>
+                            <option value="remotion" ${defaultRenderEngine === 'remotion' ? 'selected' : ''}>Remotion (AWS Lambda)</option>
+                        </select>
+                        <button class="action-btn" onclick="advanceStage(9, this, true)">Start Final Video Render</button>
+                    </div>
+                `;
+            } else if (currentDraft.stage === 8) {
+                html += `
+                    <div class="audio-preview-panel" style="text-align: center; border-color: rgba(244, 63, 94, 0.2); background: rgba(244, 63, 94, 0.03);">
+                        <h3 style="margin-bottom: 0.5rem;">Final video render failed</h3>
+                        <p style="color: var(--secondary); margin-bottom: 1.25rem;">Check the execution log for details, then retry with the saved render settings.</p>
+                        <button class="action-btn" onclick="retriggerVideoRender(this)">Retry Final Video Render</button>
+                    </div>
+                `;
+            } else if (currentDraft.stage >= 6 && currentDraft.stage < 8) {
+                html += `
+                    <div class="audio-preview-panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1rem; border-color: rgba(59, 130, 246, 0.2); background: rgba(59, 130, 246, 0.03);">
+                        <div style="display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.25);">
+                            <i data-lucide="loader-2" class="animate-spin" style="width: 22px; height: 22px; stroke: var(--sky);"></i>
+                        </div>
+                        <div>
+                            <h3 style="margin-bottom: 0.35rem;">Final video render in progress</h3>
+                            <p style="color: var(--secondary);">The renderer is assembling the master export. This can take a moment.</p>
+                        </div>
+                    </div>
+                `;
+            } else if (currentDraft.stage === 5 && targetStage > 5) {
+                html += '<div class="empty-state">Starting final video render…</div>';
+            }
+
             content.innerHTML = html;
             lucide.createIcons();
         }
@@ -1730,12 +1911,53 @@
                         <a href="${currentDraft.generated_video}" download class="action-btn" style="background: linear-gradient(135deg, var(--emerald) 0%, #059669 100%); box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.5);">
                             <i data-lucide="download"></i> Download Master Video Export (.mp4)
                         </a>
+                        <button class="back-btn" onclick="retriggerVideoRender(this)">
+                            <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i> Re-render Video
+                        </button>
                     </div>
                 `;
             } else {
                 content.innerHTML = '<div class="empty-state"><i data-lucide="clock" class="animate-pulse" style="width: 3rem; height: 3rem;"></i><p>Assembling Master Video Export. Please stand by...</p></div>';
             }
             lucide.createIcons();
+        }
+
+        async function retriggerVideoRender(button) {
+            const { idea_id, version } = getQueryParams();
+            const originalContent = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<i data-lucide="loader-2" class="animate-spin" style="width: 16px; height: 16px;"></i> Queueing render…';
+            lucide.createIcons();
+
+            try {
+                const response = await fetch('/draft', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idea_id,
+                        version_id: version,
+                        gen_video: true,
+                        edit_inplace: true
+                    })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(result.error || result.message || `Could not queue render (${response.status})`);
+                }
+
+                currentDraft.generated_video = null;
+                currentDraft.stage = 6;
+                renderDraftInfo();
+                renderStepper();
+                renderStageContent(activeStageId);
+                startLogPolling();
+                setTimeout(fetchDraft, 700);
+            } catch (error) {
+                alert(error.message);
+                button.disabled = false;
+                button.innerHTML = originalContent;
+                lucide.createIcons();
+            }
         }
 
         function showError(msg) {
@@ -1801,26 +2023,47 @@
             }
         }
 
-        async function advanceStage(targetStage) {
-            alert(`Advancing to Stage ${targetStage}... Pipeline will now resume.`);
-
+        async function advanceStage(targetStage, button = null, genVideo = false) {
             const { idea_id, version } = getQueryParams();
+            const originalLabel = button?.textContent;
+            if (button) {
+                button.disabled = true;
+                button.textContent = genVideo ? 'Starting video render…' : 'Starting next stage…';
+            }
 
-            // Kick off the generation with the new stop_at_stage
-            await fetch('/draft', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    idea_id: idea_id,
+            try {
+                const payload = {
+                    idea_id,
                     version_id: version,
                     stop_at_stage: targetStage
-                })
-            });
+                };
+                if (genVideo) {
+                    payload.gen_video = true;
+                    const renderEngine = document.getElementById('final-render-engine')?.value;
+                    if (renderEngine) payload.render_engine = renderEngine;
+                }
 
-            // Reload page to start polling again
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
+                const response = await fetch('/draft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.message || `Could not start stage (${response.status})`);
+                }
+
+                currentDraft.target_stage = targetStage;
+                renderStageContent(activeStageId);
+                if (!logPollInterval) startLogPolling();
+                setTimeout(fetchDraft, 700);
+            } catch (error) {
+                alert(error.message);
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = originalLabel;
+                }
+            }
         }
 
         let logPollInterval = null;
@@ -1872,7 +2115,10 @@
                 if (!response.ok) return;
                 const data = await response.json();
 
-                if (currentDraft && data.stage !== currentDraft.stage) {
+                if (currentDraft && (
+                    data.stage !== currentDraft.stage ||
+                    data.target_stage !== currentDraft.target_stage
+                )) {
                     currentDraft = data;
                     if (typeof currentDraft.video_data === 'string' && currentDraft.video_data) {
                         try {
@@ -1881,7 +2127,8 @@
                     }
                     renderDraftInfo();
                     renderStepper();
-                    navigateToStage(currentDraft.stage === -1 ? 0 : currentDraft.stage);
+                    const stage = currentDraft.stage === -1 ? 0 : currentDraft.stage;
+                    navigateToStage(getStageViewForDraft(stage).id);
                 }
             } catch (e) {
                 console.error("Error checking light status:", e);

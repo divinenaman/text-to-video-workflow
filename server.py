@@ -12,11 +12,14 @@ from flask import Flask, jsonify, send_from_directory, request
 from werkzeug.exceptions import HTTPException
 from elevenlabs.client import ElevenLabs
 import requests
+import subprocess
 from flask_restful.reqparse import RequestParser
 from flask_restful import reqparse
 import time
 import os
 import multiprocessing
+import sys
+import threading
 import uuid
 import redis
 import logging
@@ -266,8 +269,14 @@ def load_prod_env(app):
     with open(os.path.join(token_dir, "linode_object_storage.json")) as f:
         baasha_pipeline_auth_config["object_storage"] = json.load(f)
 
-    with open(os.path.join(token_dir, "aws_render.json")) as f:
-        render_service_creds = json.load(f)
+    # Some local/dev setups do not have valid Lambda credentials; keep the
+    # render pipeline usable by falling back to the local FFmpeg path when the
+    # configured credentials are missing or incompatible.
+    try:
+        with open(os.path.join(token_dir, "aws_render.json")) as f:
+            render_service_creds = json.load(f)
+    except Exception:
+        render_service_creds = {}
 
     baasha_pipeline_auth_config["playgroundAI_cookie"] = os.path.join(
         token_dir, "playgroundAI.json"
@@ -537,6 +546,132 @@ class DraftResource(Resource):
         return live_patch
 
     @staticmethod
+    def resolve_character_voices(
+        db_session, character_list, video_data, requested_voice_map, auto_voices
+    ):
+        validated_voices: Dict[str, Voice] = {}
+        character_names = [
+            str(character.get("name") or "")
+            for character in character_list
+            if isinstance(character, dict) and character.get("name")
+        ]
+        speakers = {
+            str(scene.get("speaker") or "")
+            for scene in video_data.get("cinematic", [])
+            if isinstance(scene, dict)
+            and scene.get("audio_type") == "dialogue"
+            and scene.get("speaker")
+        }
+        if not speakers:
+            speakers = {
+                str(line.get("character") or "")
+                for line in video_data.get("text", [])
+                if isinstance(line, dict) and line.get("character")
+            }
+
+        speaker_character_names = {}
+        for speaker in speakers:
+            if speaker in character_names:
+                speaker_character_names[speaker] = speaker
+                continue
+            candidates = [
+                name
+                for name in character_names
+                if name.casefold().endswith(f" {speaker.casefold()}")
+            ]
+            if len(candidates) == 1:
+                speaker_character_names[speaker] = candidates[0]
+
+        active_character_names = set(speaker_character_names.values())
+        requested_voice_map = requested_voice_map or {}
+        allowed_names = active_character_names | speakers | set(requested_voice_map)
+        voice_characters = [
+            character
+            for character in character_list
+            if isinstance(character, dict)
+            and character.get("name") in active_character_names
+        ]
+
+        for character_name, voice_id in requested_voice_map.items():
+            voice = db_session.query(Voice).get(voice_id)
+            if voice:
+                validated_voices[character_name] = voice
+
+        cached_voice_map = video_data.get("resolved_voice_character_map", {})
+        if isinstance(cached_voice_map, dict):
+            for character_name, voice_id in cached_voice_map.items():
+                if character_name not in allowed_names or character_name in validated_voices:
+                    continue
+                voice = db_session.query(Voice).get(voice_id)
+                if voice:
+                    validated_voices[character_name] = voice
+
+        def voice_from_character_description(character_name):
+            character = next(
+                (
+                    item
+                        for item in voice_characters
+                    if isinstance(item, dict) and item.get("name") == character_name
+                ),
+                None,
+            )
+            description = character.get("voice_description") if character else None
+            if not description:
+                return None
+            return Voice(
+                voice_id="Fenrir",
+                voice_name="Fenrir",
+                voice_sample="",
+                tts_toolkit="gemini",
+                description=description,
+            )
+
+        if isinstance(cached_voice_map, dict):
+            for character_name, voice_id in cached_voice_map.items():
+                if voice_id == "Fenrir" and character_name not in validated_voices:
+                    voice = voice_from_character_description(character_name)
+                    if voice:
+                        validated_voices[character_name] = voice
+
+        if auto_voices:
+            try:
+                from baasha_pipeline.voice_matcher import pick_automatic_voices
+
+                auto_map = pick_automatic_voices(
+                    voice_characters,
+                    db_session.query(Voice).all(),
+                    taken=validated_voices,
+                )
+                for character_name, voice in auto_map.items():
+                    validated_voices.setdefault(character_name, voice)
+            except Exception:
+                logging.exception("voice auto-cast failed")
+
+        for character in voice_characters:
+            if not isinstance(character, dict):
+                continue
+            character_name = character.get("name")
+            if character_name and character_name not in validated_voices:
+                voice = voice_from_character_description(character_name)
+                if voice:
+                    validated_voices[character_name] = voice
+
+        # Match concise dialogue speaker labels to a uniquely named bible entry
+        # (for example "Ravana" to "King Ravana").
+        for speaker in speakers:
+            if speaker in validated_voices:
+                continue
+            character_name = speaker_character_names.get(speaker)
+            if character_name in validated_voices:
+                validated_voices[speaker] = validated_voices[character_name]
+
+        video_data["resolved_voice_character_map"] = {
+            character_name: voice.id
+            for character_name, voice in validated_voices.items()
+        }
+        return validated_voices
+
+    @staticmethod
     @with_app_context
     def post():
         args = draft_parser.parse_args()
@@ -740,6 +875,9 @@ class DraftResource(Resource):
             video_data = json.loads(draft.video_data)
             story_sentences = video_data["text"]
             content_type = video_data.get("content_type", "reel")
+
+            if args.render_engine:
+                video_data["render_engine"] = args.render_engine
 
             if content_type == "conversation":
                 story_sentences = list(map(lambda x: x["text"], story_sentences))
@@ -1436,10 +1574,14 @@ class DraftResource(Resource):
                 if "patch_original_crops" in locals():
                     video_data["grid_crops"] = grid_crops
                     video_data["upscaled_images"] = upscaled_images_arr
-                focus_directions = image_search_agent.find_image_focus_direction(
+                camera_moves = image_search_agent.find_image_focus_direction(
                     patched_img, chatbot
                 )
-                video_data["image_focus_directions"] = focus_directions
+                video_data["image_camera_moves"] = camera_moves
+                video_data["image_focus_directions"] = [
+                    m.get("direction", "middle") if isinstance(m, dict) else "middle"
+                    for m in camera_moves
+                ]
 
             if args.judge_grids:
                 if old_stage >= DraftStages.IMAGE_GEN:
@@ -2234,6 +2376,9 @@ class DraftResource(Resource):
                     args.idea_id, args.version_id, draft, request.url_root
                 )
                 if success:
+                    draft.generated_video = None
+                    video_data.pop("render_error", None)
+                    draft.video_data = json.dumps(video_data)
                     draft.stage = DraftStages.VIDEO_GEN_STARTED
                 else:
                     video_data["render_error"] = err
@@ -2251,9 +2396,99 @@ class DraftResource(Resource):
 
     def trigger_render(idea_id, version, draft, webhook_origin):
         webhook = f"{webhook_origin}video_gen_webhook/{idea_id}/{version}"
-        client = boto3.client("lambda", **render_service_creds)
 
         try:
+            draft_render_engine = json.loads(draft.video_data or "{}").get(
+                "render_engine"
+            )
+        except Exception:
+            draft_render_engine = None
+
+        default_render_mode = config.get("RENDER", "MODE", fallback="ffmpeg")
+        render_mode = draft_render_engine or default_render_mode
+
+        # Local/dev browsers are expected to use ffmpeg by default, and the
+        # Lambda path should never crash the app when AWS creds are missing or
+        # an incompatible object-storage config gets loaded from tokens/.
+        if not draft_render_engine and webhook_origin and (
+            "localhost" in webhook_origin or "127.0.0.1" in webhook_origin
+        ):
+            render_mode = "ffmpeg"
+
+        if render_mode == "ffmpeg":
+            script = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "scripts",
+                "render_ffmpeg_simplistic.py",
+            )
+            workdir = os.path.join(local_cache, "renders", f"{idea_id}.{version}")
+            cmd = [
+                sys.executable,
+                script,
+                "--idea", str(idea_id),
+                "--version", str(version),
+                "--webhook", webhook,
+                "--workdir", workdir,
+            ]
+            os.makedirs(workdir, exist_ok=True)
+            log_file = open(os.path.join(workdir, "render.log"), "ab")
+
+            def _run_local_render():
+                try:
+                    subprocess.run(
+                        cmd,
+                        stdout=log_file,
+                        stderr=log_file,
+                        cwd=os.path.dirname(os.path.abspath(__file__)),
+                        check=False,
+                    )
+                except Exception:
+                    logging.exception("ffmpeg render spawn failed")
+                finally:
+                    log_file.close()
+
+            threading.Thread(target=_run_local_render, daemon=True).start()
+            logging.info(f"ffmpeg local render queued: {idea_id}.{version}")
+            return True, None
+
+        try:
+            creds = render_service_creds or {}
+            has_valid_lambda_auth = (
+                creds.get("aws_access_key_id")
+                and creds.get("aws_secret_access_key")
+            ) or (
+                creds.get("access_key")
+                and creds.get("secret_key")
+            )
+            if "cluster" in creds or "protocol" in creds:
+                raise RuntimeError(
+                    "tokens/aws_render.json contains object-storage endpoint "
+                    "credentials, not AWS Lambda credentials. Select FFmpeg for "
+                    "local rendering or configure AWS Lambda credentials."
+                )
+            if not has_valid_lambda_auth:
+                raise RuntimeError(
+                    "No valid AWS Lambda credentials available for render; "
+                    "falling back to local FFmpeg rendering is recommended."
+                )
+
+            client_kwargs = {}
+            if creds.get("aws_access_key_id") and creds.get("aws_secret_access_key"):
+                client_kwargs["aws_access_key_id"] = creds["aws_access_key_id"]
+                client_kwargs["aws_secret_access_key"] = creds["aws_secret_access_key"]
+            elif creds.get("access_key") and creds.get("secret_key"):
+                client_kwargs["aws_access_key_id"] = creds["access_key"]
+                client_kwargs["aws_secret_access_key"] = creds["secret_key"]
+
+            region = (
+                creds.get("region_name")
+                or os.getenv("AWS_REGION")
+                or os.getenv("AWS_DEFAULT_REGION")
+            )
+            if region:
+                client_kwargs["region_name"] = region
+
+            client = boto3.client("lambda", **client_kwargs)
             response = client.invoke(
                 FunctionName="pataka-remotion",
                 InvocationType="Event",
@@ -2384,13 +2619,17 @@ class DraftResource(Resource):
                 for key in [
                     "content_type",
                     "voice_id",
+                    "voice_character_map",
                     "style_id",
                     "background_music_id",
                     "image_engine",
                     "visual_engine",
+                    "render_engine",
+                    "auto_voices",
                 ]:
-                    if data.get(key):
-                        video_data_cache[key] = data.get(key)
+                    value = data.get(key)
+                    if value is not None and value != "":
+                        video_data_cache[key] = value
 
                 target_draft.video_data = json.dumps(video_data_cache)
                 db_session.commit()
@@ -2408,7 +2647,16 @@ class DraftResource(Resource):
                 logging.info(f"content-type: {content_type}")
 
                 voice_id = data.get("voice_id") or video_data_cache.get("voice_id")
-                voice_character_map = data["voice_character_map"]
+                voice_character_map = data.get("voice_character_map") or (
+                    video_data_cache.get("voice_character_map") or {}
+                )
+                auto_voices = (
+                    data.get("auto_voices")
+                    if data.get("auto_voices") is not None
+                    else video_data_cache.get("auto_voices", False)
+                )
+                if auto_voices:
+                    voice_id = None
                 style_id = data.get("style_id") or video_data_cache.get("style_id")
                 style_ref_urls = data["style_reference_urls"]
 
@@ -2784,6 +3032,16 @@ class DraftResource(Resource):
                     db_session.commit()
                 else:
                     character_list = json.loads(target_draft.character_ref or "[]")
+
+                validated_voices = DraftResource.resolve_character_voices(
+                    db_session,
+                    character_list,
+                    video_data,
+                    voice_character_map,
+                    auto_voices,
+                )
+                target_draft.video_data = json.dumps(video_data)
+                db_session.commit()
 
                 if stop_at_stage == target_draft.stage:
                     return stop_gen(target_draft.stage)
@@ -3198,38 +3456,6 @@ class DraftResource(Resource):
                 )
 
                 if target_draft.stage < DraftStages.AUDIO_GEN_VIDEO_CONFIG_GEN:
-
-                    validated_voices: Dict[str, Voice] = {}
-
-                    # 1. Resolve manual user mapped voices from database
-                    if voice_character_map:
-                        for ch in voice_character_map:
-                            vid = voice_character_map[ch]
-                            if validated_voices.get(ch):
-                                continue
-                            voice_details = Voice.query.get(vid)
-                            if voice_details:
-                                validated_voices[ch] = voice_details
-
-                    # 2. Resolve characters with voice descriptions from character bible
-                    character_list = (
-                        json.loads(target_draft.character_ref)
-                        if target_draft.character_ref
-                        else []
-                    )
-                    for char in character_list:
-                        ch_name = char.get("name")
-                        voice_desc = char.get("voice_description")
-                        if ch_name and voice_desc:
-                            if ch_name not in validated_voices:
-                                validated_voices[ch_name] = Voice(
-                                    voice_id="Fenrir",
-                                    voice_name="Fenrir",
-                                    voice_sample="",
-                                    tts_toolkit="gemini",
-                                    description=voice_desc,
-                                )
-
                     voice_character_map = validated_voices
 
                     out_dir = "{}.{}".format(data["idea_id"], target_draft_version)
@@ -3705,10 +3931,12 @@ class VoiceResource(Resource):
     @staticmethod
     @with_app_context
     def preload_voices():
-        client = ElevenLabs(
-            api_key=config["ELEVENLABS"]["API_KEY"],
-        )
-        elevenlabs_voices = client.voices.get_all().voices
+        try:
+            client = ElevenLabs(api_key=config["ELEVENLABS"]["API_KEY"])
+            elevenlabs_voices = client.voices.get_all().voices
+        except Exception as e:
+            logger.warning("ElevenLabs voice preload failed: %s", e)
+            return
 
         voice_names = []
         for voice in elevenlabs_voices:

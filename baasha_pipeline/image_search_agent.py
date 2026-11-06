@@ -1,6 +1,6 @@
 from os.path import join
 from playwright.sync_api import sync_playwright, Page, Locator, Playwright, Browser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, unquote
 import json
 from . import chatbot as Chatbot
 from .prompts.splitters import markdown_parse
@@ -373,38 +373,216 @@ def choose_best_image(page: Page, chatbot: Chatbot.ChatInterface, images, query)
     return None, None, 0.0
 
 
-@errors.log_ctx_errors
+FOCUS_DIRECTIONS = (
+    "top",
+    "bottom",
+    "left",
+    "right",
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+    "middle",
+)
+CAMERA_MOVES = (
+    "dolly-in",
+    "dolly-out",
+    "pan-left",
+    "pan-right",
+    "tilt-up",
+    "tilt-down",
+    "drift-toward-focus",
+    "static",
+)
+CAMERA_INTENSITIES = ("subtle", "medium", "strong")
+
+_direction_fix = {
+    "center": "middle",
+    "centre": "middle",
+    "top right": "top-right",
+    "top left": "top-left",
+    "bottom right": "bottom-right",
+    "bottom left": "bottom-left",
+    "down": "bottom",
+    "up": "top",
+}
+
+
+def _norm_focus_direction(d):
+    d = (unquote(str(d or "middle")) or "middle").strip().lower()
+    d = _direction_fix.get(d, d)
+    return d if d in FOCUS_DIRECTIONS else "middle"
+
+
+_direction_to_move = {
+    "middle": None,
+    "top": "tilt-up",
+    "bottom": "tilt-down",
+    "left": "pan-left",
+    "right": "pan-right",
+    "top-left": "drift-toward-focus",
+    "top-right": "drift-toward-focus",
+    "bottom-left": "drift-toward-focus",
+    "bottom-right": "drift-toward-focus",
+}
+
+
+def _parse_camera_entry(entry, idx):
+    """Coerce one vision-LLM answer into a sanitized camera move dict."""
+    if isinstance(entry, list) and len(entry) == 1:
+        entry = entry[0]
+    if not isinstance(entry, dict):
+        direction = _norm_focus_direction(entry)
+        return {
+            "direction": direction,
+            "move": _direction_to_move[direction],
+            "intensity": "medium",
+            "subject": "",
+        }
+
+    def pick(*keys):
+        for k in keys:
+            if isinstance(entry.get(k), str) and entry.get(k).strip():
+                return entry[k].strip()
+        return None
+
+    direction = _norm_focus_direction(pick("direction", "anchor", "focus"))
+    move = pick("move", "motion", "camera_move")
+    move = move if move in CAMERA_MOVES else _direction_to_move[direction]
+    intensity = pick("intensity", "magnitude")
+    intensity = intensity if intensity in CAMERA_INTENSITIES else "medium"
+    return {
+        "direction": direction,
+        "move": move if move else "dolly-in",
+        "intensity": intensity,
+        "subject": (pick("subject", "poi") or "")[:120],
+    }
+
+
+def _compact_screenshot(img_bytes, max_w=1280, quality=75):
+    """Downscale + JPEG-encode a screenshot so the vision tier stays happy."""
+    try:
+        from PIL import Image
+        import io
+
+        im = Image.open(io.BytesIO(img_bytes))
+        if im.width > max_w:
+            im = im.resize(
+                (max_w, round(im.height * max_w / im.width)), Image.LANCZOS
+            )
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
+    except Exception:
+        return img_bytes
+
+
+def parse_camera_moves(raw, n_images):
+    """Map a vision-LLM response (dict keyed by batch image indexes) onto the
+    full list of images; fills defaults for missing entries."""
+    if isinstance(raw, list):
+        raw = {str(i): e for i, e in enumerate(raw) if i < n_images}
+    if not isinstance(raw, dict):
+        return None
+    out = []
+    for i in range(n_images):
+        entry = None
+        for k in (str(i), i, f"{i}"):
+            if isinstance(raw, dict) and k in raw:
+                entry = raw[k]
+                break
+        out.append(_parse_camera_entry(entry, i))
+    return out
+
+
+@errors.raise_ctx_errors
 def find_image_focus_direction(images, chatbot: Chatbot.ChatInterface):
-    browser_manager = BrowserManager()
+    """Vision-LLM passes over batches of 4 images; returns a sanitized list of
+    camera-move dicts (`direction`, `move`, `intensity`, `subject`) per image.
+
+    Semantics for the model: a slow camera shot follows - it will drift toward
+    the image's point-of-interest (`direction`) using `move` at `intensity`,
+    so the POI should be described precisely.
+    """
+    prompt_text = (
+        "For every image in the grid you will plan one slow cinematic camera "
+        "move for a short video. In each cell the FIRST LINE shows its grid "
+        "position, e.g. 'Index: 0' is grid position 0, the image BELOW that "
+        "label belongs to it. Respond ONLY for grid positions 0,1,2,3 of THIS "
+        "screenshot.\n\n"
+        "For each image decide:\n"
+        '- "direction": where the point-of-interest (what the shot should '
+        "end up centered on) sits inside the image. One of: top, bottom, "
+        "left, right, top-left, top-right, bottom-left, bottom-right, "
+        "middle.\n"
+        '- "move": the most fitting slow move, one of: dolly-in (push '
+        "closer, best for faces, portraits, detail shots), dolly-out (pull "
+        "back, revealing context, best for already-tight or confusing "
+        "crops), pan-left / pan-right (slide sideways, best for wide "
+        "landscapes, crowds, scenery), tilt-up / tilt-down (slide up/down, "
+        "best for tall subjects, buildings, text panels), "
+        "drift-toward-focus (gentle diagonal glide, neutral fall-back), "
+        "static (symmetric mandalas, screenshots, graphs, already-framed "
+        "art).\n"
+        '- "intensity": "subtle" (tight faces / important text), "medium" '
+        "(default), \"strong\" (wide scenery with lots of room).\n"
+        '- "subject": ~8 words describing the point-of-interest in this '
+        "image.\n\n"
+        "Avoid choosing moves that would crop faces or text if the subject "
+        'is near an edge. Output a JSON object in a ```json block: keys = '
+        'grid positions as strings ("0", "1", "2", "3"), values = objects '
+        "exactly like: {\"direction\": \"...\", \"move\": \"...\", "
+        "\"intensity\": \"...\", \"subject\": \"...\"}\n"
+    )
+
+    browser_manager = get_shared_browser_manager()
     page = browser_manager.get_page()
 
-    prompt_text = f"Given a set of images with a corresponding index, analyze all the images in detail and find the direction where the image should be focused to highlight the main content in an image. The direction can be any of the following - `top`, `bottom`, `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`, `middle` . Return a JSON with key as the index of the image and value as the one of the direction, enclose the JSON in ```json \n\n"
-
-    output = [None] * len(images)
+    output = []
     i = 0
-    while i <= len(images):
+    while i < len(images):
+        batch = list(images[i : min(len(images), i + 4)])
         html = mk_image_grid_html(
-            list(
-                map(
-                    lambda x: {"src": x, "alt": None},
-                    images[i : min(len(images), i + 4)],
-                )
-            ),
-            col=4,
+            [{"src": x, "alt": None} for x in batch], col=4
         )
-
         page.set_content(html)
         time.sleep(2)
-        # Use full_page=True to capture the entire grid layout safely
         img_bytes = page.screenshot(full_page=True)
 
+        # full-page grid screenshots can be MB-heavy; the free vision tier
+        # responds far more reliably to a compact JPEG encode
+        img_bytes = _compact_screenshot(img_bytes)
+
         prompt = Chatbot.Img(_bytes=img_bytes, text=prompt_text)
-        res = chatbot.fetch_text(prompt)
-        out = json.loads(markdown_parse(res))
 
-        for j in range(i, min(len(images), i + 4)):
-            output[j] = out.get(str(j - i))
+        moves = None
+        for attempt in range(2):
+            try:
+                res = chatbot.fetch_text(prompt)
+                moves = parse_camera_moves(
+                    json.loads(markdown_parse(res)), len(batch)
+                )
+                break
+            except Exception as e:
+                logging.warning(
+                    f"focus-direction attempt {attempt} failed "
+                    f"at batch {i}: {type(e).__name__}: {str(e)[:160]}"
+                )
+                time.sleep(2)
 
+        if not moves:
+            # vision chain unavailable: degrade to a deterministic default so
+            # the storyboard keeps moving instead of crashing the draft
+            moves = [
+                {
+                    "direction": "middle",
+                    "move": "dolly-in" if (i + k) % 2 == 0 else "dolly-out",
+                    "intensity": "medium",
+                    "subject": "",
+                }
+                for k in range(len(batch))
+            ]
+        output.extend(moves)
         i += 4
 
     return output

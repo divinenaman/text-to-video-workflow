@@ -576,7 +576,12 @@ class ChatInterface:
                 text = text[0]
 
             if isinstance(text, Img):
-                img = f"data:image/png;base64," + encode_image(text._bytes)
+                payload = text._bytes
+                if isinstance(payload, (list, tuple)):
+                    payload = payload[0] if len(payload) == 1 else b"".join(payload)
+                if isinstance(payload, str):
+                    payload = payload.encode()
+                img = f"data:image/png;base64," + encode_image(payload)
                 text = text.text
 
             # Groq free tier has no vision models - hand image prompts straight

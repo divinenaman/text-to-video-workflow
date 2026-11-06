@@ -2136,10 +2136,14 @@ def generate_video_data(
 
                 data["images"] = image_urls
                 if image_urls and len(image_urls) > 0:
-                    focus_directions = image_search_agent.find_image_focus_direction(
+                    camera_moves = image_search_agent.find_image_focus_direction(
                         image_urls, chatbot
                     )
-                    data["image_focus_directions"] = focus_directions
+                    data["image_camera_moves"] = camera_moves
+                    data["image_focus_directions"] = [
+                        m.get("direction", "middle") if isinstance(m, dict) else "middle"
+                        for m in camera_moves
+                    ]
 
                 # data["final_image_prompts"] = image_prompts
                 # data["image_engine_map"] = image_engine_map
@@ -3114,31 +3118,61 @@ def create_image_grid(
     url = urls[0]
     raw_grids = []
 
-    # Perform Autonomous Refinement Passes if requested
+    # One initial audit/refinement, followed by one verification audit only.
     if refine_grid_count and refine_grid_count > 0:
-        logging.info(
-            f"Triggering {refine_grid_count} Autonomous Refinement Pass(es)..."
+        logging.info("Triggering one grid audit/refinement pass...")
+        original_url = url
+        refined_url, report = refine_and_fix_grid(
+            chatbot,
+            url,
+            style_refs,
+            story_context,
+            prompts,
+            character_refs,
+            image_config,
+            grid_guidance,
+            outdir,
+            prompt_overrides=prompt_overrides,
         )
-        for i in range(refine_grid_count):
-            refined_urls, report = refine_and_fix_grid(
-                chatbot,
-                url,
-                style_refs,
-                story_context,
-                prompts,
-                character_refs,
-                image_config,
-                grid_guidance,
-                outdir,
-                prompt_overrides=prompt_overrides,
+        if refined_url and refined_url != original_url:
+            raw_grids.append(original_url)
+            url = refined_url
+            logging.info("Grid refinement generated candidate: %s", url)
+
+            verification_refs = [
+                {
+                    "url": ref["url"],
+                    "desp": ref.get("desp") or ref.get("name") or "visual reference",
+                }
+                for ref in (style_refs or [])
+                if isinstance(ref, dict) and ref.get("url")
+            ]
+            verification = judge_image_grid(
+                url, verification_refs, story_context, prompts, character_refs,
+                chatbot, prompt_overrides=prompt_overrides
             )
-            if refined_urls and len(refined_urls) > 0:
-                raw_grids.append(url)
-                url = refined_urls
-                logging.info(f"Refinement Pass {i+1} complete. URL : {url}")
-            else:
-                logging.info(f"Refinement Pass {i+1} resulted in no change or failed.")
-                break
+            failed_panels = [
+                {
+                    "panel_index": panel.get("panel_index"),
+                    "issue": panel.get("issue"),
+                    "details": panel.get("details"),
+                }
+                for panel in (verification.get("panels") or [])
+                if isinstance(panel, dict)
+                and str(panel.get("status", "")).upper() == "FAIL"
+            ]
+            logging.info(
+                "Grid verification complete: score=%s failed_panels=%s critique=%s",
+                verification.get("consistency_score"),
+                failed_panels,
+                verification.get("holistic_critique"),
+            )
+        else:
+            logging.info(
+                "Grid refinement made no change; initial audit score=%s critique=%s",
+                report.get("consistency_score"),
+                report.get("holistic_critique"),
+            )
 
     if skip_splitting:
         return (url, None, raw_grids, grid_prompt)
@@ -3200,7 +3234,32 @@ def judge_image_grid(
     )
     char_text = json.dumps(character_list)
 
-    prompt = get_prompt_text("holistic-grid-judge", overrides=prompt_overrides).format(
+    judge_prompt = get_prompt_text(
+        "holistic-grid-judge", overrides=prompt_overrides
+    )
+    hardening = """
+
+### Mandatory Deal-Breaker Checks (Fail Closed)
+- Audit each panel individually at full available detail. Do not pass a panel merely because its main subject looks plausible; inspect every visible person, including small background figures, hands, faces, limbs, and silhouettes. Distinguish intentional depth-of-field blur from accidental smeared, malformed, or unreadable generated anatomy. Flag noticeable background defects just as firmly as foreground defects.
+- Treat the ordered panel descriptions as a continuity ledger. Track each named character's face, skin tone, hair, body, costume, accessories, and current story state from panel to panel. A wardrobe or appearance change is valid only when the descriptions or story explicitly establish the change before or in that panel. Do not excuse a sudden change just because each individual panel looks attractive.
+- Check transitions between adjacent panels, especially at chunk boundaries. For every appearance, verify the character is the right person and carries forward the immediately prior state unless the narrative explicitly changes it.
+- For characters with a specified exact count of body parts or heads, count what is visibly present. In particular, a ten-headed Ravana depiction must show exactly ten distinct heads total, not an approximate fan, merged faces, or extra/missing heads. Treat incorrect counts as critical failures.
+- Check story chronology, not just prompt obedience. A panel can be visually well-formed and still fail if it reveals a transformation, identity, power, or climax earlier than the story establishes it. Compare the sequence and script context; flag an out-of-order reveal even if a panel prompt appears to request it, and explain the chronology conflict.
+- Inspect background crowds and extras for duplicated faces/poses, malformed bodies, fused or extra limbs, impossible joints, inconsistent scale, and excessive blur. Flag clear defects; do not waive them because the figures are secondary.
+- Treat unrequested text, logos, watermarks, and UI-like marks as failures. Requested title cards or diegetic text are allowed only when the corresponding panel description explicitly asks for them, and the rendered wording must match.
+- Do not award a passing score of 90 or higher if any critical continuity, chronology, exact-count, anatomy, or format issue is present. If a detail cannot be inspected confidently, report it as uncertain rather than silently marking it PASS.
+
+The JSON panel indices are one-based positions within the supplied grid, in reading order (left-to-right, top-to-bottom). Return a FAIL entry for every issue that needs correction, with a precise directive and unchanged elements. The holistic critique must clearly state any unresolved issue.
+"""
+    output_marker = "### Output Format"
+    if output_marker in judge_prompt:
+        judge_prompt = judge_prompt.replace(
+            output_marker, hardening + "\n" + output_marker, 1
+        )
+    else:
+        judge_prompt += hardening
+
+    prompt = judge_prompt.format(
         STORY_CONTEXT=story_context or "Refer to the context provided for grounding",
         PANEL_DESCRIPTIONS=panel_text,
         CHARACTER_LIST=char_text,
@@ -3209,8 +3268,35 @@ def judge_image_grid(
     prompts = []
     if grid_refs:
         for r in grid_refs:
-            grid_ref = mk_chatbot_img_prompt(r["url"], r["desp"])
+            if not isinstance(r, dict) or not r.get("url"):
+                continue
+            grid_ref = mk_chatbot_img_prompt(
+                r["url"], r.get("desp") or r.get("name") or "visual reference"
+            )
             prompts.append(grid_ref)
+
+    seen_character_refs = set()
+    panel_text_lower = panel_text.casefold()
+    for character in character_list or []:
+        if not isinstance(character, dict):
+            continue
+        name = str(character.get("name") or "")
+        ref_url = character.get("url")
+        if (
+            not name
+            or not ref_url
+            or name.casefold() not in panel_text_lower
+            or name.casefold().startswith(("story-grid-", "other-grid-", "crop-"))
+            or ref_url in seen_character_refs
+        ):
+            continue
+        seen_character_refs.add(ref_url)
+        prompts.append(
+            mk_chatbot_img_prompt(
+                ref_url,
+                f"Character identity reference for {name}. Use only to compare this character's visual identity.",
+            )
+        )
 
     grid_img = mk_chatbot_img_prompt(grid_url, prompt)
     prompts.append(grid_img)
@@ -3250,9 +3336,11 @@ def refine_and_fix_grid(
     Consolidated Batch Refinement: Prompts all fixes together in a single pass.
     Uses the original grid as a subject reference to anchor the evolution.
     """
-    grid_refinement_refs = list(
-        map(lambda x: {"url": x["url"], "desp": x.get("name", "style ref")}, grid_refs)
-    )
+    grid_refinement_refs = [
+        {"url": ref["url"], "desp": ref.get("name", "style ref")}
+        for ref in (grid_refs or [])
+        if isinstance(ref, dict) and ref.get("url")
+    ]
     report = judge_image_grid(
         grid_url,
         grid_refinement_refs,
@@ -3273,19 +3361,22 @@ def refine_and_fix_grid(
     )
 
     # 2. Consolidate ALL fixes into a Master List
-    failed_panels = [p for p in report.get("panels", []) if p["status"] == "FAIL"]
-
-    if not failed_panels:
-        return grid_url, report
-
     fix_list_text = ""
-    for fp in failed_panels:
-        idx = fp["panel_index"]
-        directive = fp["fix_directive"]
+    for fp in (report.get("panels") or []):
+        if not isinstance(fp, dict) or str(fp.get("status", "")).upper() != "FAIL":
+            continue
+        idx = fp.get("panel_index")
+        directive = fp.get("fix_directive")
+        if idx is None or not directive:
+            logging.warning("Judge marked a panel failed without a usable fix: %s", fp)
+            continue
         unchanged = fp.get("unchanged_elements", "")
         fix_list_text += f"- Panel {idx}:\n  FIX: {directive}\n"
         if unchanged:
             fix_list_text += f"  DO NOT CHANGE: {unchanged}\n"
+
+    if not fix_list_text:
+        return grid_url, report
 
     # 3. Construct the Batch Refinement Prompt
     batch_refine_prompt = get_prompt_text("grid-refinement-v2").format(

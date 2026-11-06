@@ -8,13 +8,21 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
-            --bg: #090d16;
-            --surface: rgba(17, 24, 39, 0.5);
-            --border: rgba(255, 255, 255, 0.08);
-            --accent: #8b5cf6;
-            --accent-glow: rgba(139, 92, 246, 0.4);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            --bg: #f4f1e7;
+            --bg-2: #efe9dc;
+            --surface: #f9f7f1;
+            --surface-strong: #ffffff;
+            --border: #d9d5c8;
+            --border-strong: #b9b3a3;
+            --accent: #0041ca;
+            --accent-2: #0038a6;
+            --accent-soft: #edf3ff;
+            --text-main: #1a1a1a;
+            --text-muted: #555448;
+            --success: #0f766e;
+            --warning: #d97706;
+            --ink: #1a1a1a;
+            --line: #e4e4d0;
         }
 
         * {
@@ -24,10 +32,7 @@
         }
 
         body {
-            background-color: var(--bg);
-            background-image:
-                radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 45%);
+            background: var(--bg);
             font-family: 'Inter', sans-serif;
             color: var(--text-main);
             min-height: 100vh;
@@ -35,16 +40,16 @@
             align-items: center;
             justify-content: center;
             overflow-x: hidden;
-            padding: 1.5rem;
+            padding: 1.75rem;
         }
 
         .studio-container {
             width: 100%;
-            max-width: 680px;
+            max-width: 760px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2.5rem;
+            gap: 2.25rem;
             animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
@@ -55,43 +60,49 @@
 
         .brand {
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.65rem;
         }
 
         .brand-logo {
             font-family: 'Outfit', sans-serif;
-            font-size: 3rem;
+            font-size: clamp(2.6rem, 3vw, 3.2rem);
             font-weight: 800;
-            letter-spacing: -0.03em;
-            background: linear-gradient(135deg, #f8fafc 30%, #a78bfa 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
+            letter-spacing: -0.04em;
+            color: var(--ink);
+            margin-bottom: 0.1rem;
         }
 
         .brand-subtitle {
-            font-size: 1rem;
+            font-size: 0.96rem;
             color: var(--text-muted);
             font-weight: 500;
+            letter-spacing: 0.02em;
         }
 
         /* Central Prompting Workspace */
         .prompt-card {
             width: 100%;
-            background: var(--surface);
-            backdrop-filter: blur(24px);
+            background: rgba(255, 255, 255, 0.75);
             border: 1px solid var(--border);
-            border-radius: 24px;
+            border-radius: 26px;
             padding: 1.5rem;
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8);
+            box-shadow: 0 8px 24px rgba(17, 17, 17, 0.05);
             display: flex;
             flex-direction: column;
             gap: 1.25rem;
-            transition: border-color 0.3s, box-shadow 0.3s;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .prompt-card:hover {
+            border-color: var(--border-strong);
         }
 
         .prompt-card:focus-within {
-            border-color: rgba(139, 92, 246, 0.4);
-            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(139, 92, 246, 0.3);
+            border-color: var(--accent);
+            box-shadow: 0 8px 24px rgba(17, 17, 17, 0.05), 0 0 0 2px rgba(0, 65, 202, 0.1);
         }
 
         .textarea-wrapper {
@@ -114,7 +125,7 @@
         }
 
         .prompt-textarea::placeholder {
-            color: rgba(148, 163, 184, 0.6);
+            color: #77766c;
         }
 
         /* Style reference attach (ChatGPT-style) */
@@ -125,9 +136,9 @@
             width: 40px;
             height: 40px;
             border-radius: 12px;
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            background: rgba(15, 23, 42, 0.6);
-            color: #94a3b8;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -136,9 +147,8 @@
         }
 
         .style-attach-btn:hover {
-            color: #a78bfa;
-            border-color: rgba(139, 92, 246, 0.5);
-            transform: translateY(-2px);
+            color: var(--accent);
+            border-color: var(--accent);
         }
 
         .style-attach-btn:disabled {
@@ -160,7 +170,7 @@
             gap: 0.6rem;
             padding: 0.4rem 0.6rem 0.4rem 0.4rem;
             border-radius: 12px;
-            background: rgba(255, 255, 255, 0.03);
+            background: #f2f0e8;
             border: 1px solid var(--border);
             font-size: 0.78rem;
             color: var(--text-muted);
@@ -184,14 +194,14 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            color: #e2e8f0;
+            color: var(--text-main);
         }
 
         .style-attach-chip .chip-remove {
             margin-left: 0.35rem;
             background: none;
             border: none;
-            color: #64748b;
+            color: var(--text-muted);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -209,23 +219,22 @@
             position: absolute;
             bottom: 0px;
             right: 0px;
-            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+            background: var(--accent);
             color: white;
-            border: none;
-            width: 48px;
-            height: 48px;
+            border: 1px solid var(--ink);
+            width: 50px;
+            height: 50px;
             border-radius: 16px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 8px 16px -4px rgba(139, 92, 246, 0.4);
-            transition: all 0.2s ease;
+            transition: transform 0.2s ease, background 0.2s ease;
         }
 
         .send-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 20px -4px rgba(139, 92, 246, 0.5);
+            transform: translateY(-1px);
+            background: var(--accent-2);
         }
 
         .send-btn:active {
@@ -239,9 +248,9 @@
             width: 40px;
             height: 40px;
             border-radius: 12px;
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            background: rgba(15, 23, 42, 0.6);
-            color: #94a3b8;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-muted);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -250,9 +259,8 @@
         }
 
         .mic-btn:hover {
-            color: #38bdf8;
-            border-color: rgba(56, 189, 248, 0.5);
-            transform: translateY(-2px);
+            color: var(--accent);
+            border-color: var(--accent);
         }
 
         .mic-btn:disabled {
@@ -263,9 +271,8 @@
 
         .mic-btn.recording {
             color: #ffffff;
-            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-            border-color: rgba(239, 68, 68, 0.7);
-            animation: mic-pulse 1.4s ease-out infinite;
+            background: #b91c1c;
+            border-color: #7f1d1d;
         }
 
         @keyframes mic-pulse {
@@ -279,7 +286,7 @@
             margin-top: 0.4rem;
             font-size: 0.8rem;
             line-height: 1.35;
-            color: #fbbf24;
+            color: #92400e;
             min-height: 1rem;
         }
 
@@ -288,15 +295,15 @@
         }
 
         .dictation-status.error {
-            color: #f87171;
+            color: #b91c1c;
         }
 
         /* Config Accordion styling */
         .config-accordion {
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border);
             border-radius: 16px;
             overflow: hidden;
-            background: rgba(15, 23, 42, 0.3);
+            background: var(--surface);
             width: 100%;
             transition: all 0.3s;
             display: none; /* Hidden by default for Low/Medium presets */
@@ -304,7 +311,7 @@
 
         .accordion-header {
             padding: 0.85rem 1.25rem;
-            background: rgba(30, 41, 59, 0.2);
+            background: #f2f0e8;
             cursor: pointer;
             font-size: 0.85rem;
             font-weight: 600;
@@ -317,7 +324,7 @@
         }
 
         .accordion-header:hover {
-            background: rgba(30, 41, 59, 0.35);
+            background: #eae7dc;
             color: var(--text-main);
         }
 
@@ -326,8 +333,8 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.03);
-            max-height: 400px;
+            border-top: 1px solid var(--border);
+            max-height: 1200px;
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             overflow: hidden;
         }
@@ -359,7 +366,7 @@
         }
 
         .field-input, .field-select {
-            background: rgba(15, 23, 42, 0.6);
+            background: #fffef9;
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 0.6rem 0.85rem;
@@ -392,14 +399,14 @@
 
         .checkbox-label {
             font-size: 0.8rem;
-            color: #cbd5e1;
+            color: var(--text-main);
         }
 
         /* Full Screen Overlay Loader */
         .overlay-loader {
             position: fixed;
             inset: 0;
-            background: #060911;
+            background: rgba(244, 241, 231, 0.96);
             z-index: 1000;
             display: flex;
             flex-direction: column;
@@ -419,7 +426,7 @@
         .ring-spinner {
             width: 64px;
             height: 64px;
-            border: 3px solid rgba(139, 92, 246, 0.1);
+            border: 3px solid #d9d5c8;
             border-radius: 50%;
             border-top-color: var(--accent);
             animation: spin 1s linear infinite;
@@ -439,14 +446,22 @@
             text-align: center;
         }
         /* BYOP Card Premium Enhancements */
+        .byop-card {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: 1.35rem 1.5rem;
+            box-shadow: 0 8px 24px rgba(17, 17, 17, 0.05);
+        }
+
         .byop-card:focus-within {
-            border-color: rgba(139, 92, 246, 0.4) !important;
+            border-color: var(--accent) !important;
         }
 
         .switch input:checked + .slider {
             background-color: var(--accent);
             border-color: var(--accent);
-            box-shadow: 0 0 12px var(--accent-glow);
         }
 
         .slider:before {
@@ -468,7 +483,7 @@
 
         .byop-reset-btn:hover {
             opacity: 1 !important;
-            color: #a78bfa !important;
+            color: var(--accent) !important;
         }
     </style>
 </head>
@@ -497,9 +512,9 @@
             </div>
             <div class="dictation-status" id="dictation-status"></div>
             <!-- Preset Selector Group -->
-            <div class="preset-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04);">
+            <div class="preset-wrapper" style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
                 <label class="field-label" style="margin: 0;">Generation Preset</label>
-                <select class="field-select" id="cfg-preset" onchange="onPresetChange()" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem; background: rgba(15, 23, 42, 0.8);">
+                <select class="field-select" id="cfg-preset" onchange="onPresetChange()" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem;">
                     <option value="low" selected>Low Fidelity</option>
                     <option value="medium">Medium Fidelity</option>
                     <option value="custom">Custom Parameters</option>
@@ -507,81 +522,91 @@
             </div>
 
             <!-- Workflow Mode Selector -->
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04);">
-                <label class="field-label" style="margin: 0; color: #38bdf8;">Workflow Mode</label>
-                <select class="field-select" id="workflow-mode" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem; background: rgba(15, 23, 42, 0.8); border-color: rgba(56, 189, 248, 0.3);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                <label class="field-label" style="margin: 0; color: var(--text-main);">Workflow Mode</label>
+                <select class="field-select" id="workflow-mode" style="width: auto; min-width: 150px; padding: 0.4rem 0.75rem;">
                     <option value="auto" selected>Auto (One-Shot Cinematic Generation)</option>
                     <option value="prompts">Prompts Only (Stop Before Image Gen)</option>
                     <option value="review">Review Driven (Multi-Stage Director Studio)</option>
                 </select>
             </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+                <div>
+                    <label class="field-label" for="cfg-voice-mode" style="margin: 0; color: var(--text-main);">Character Voice Mode</label>
+                    <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">Auto assigns distinct available voices to characters; manual mappings are in Advanced Parameters.</p>
+                </div>
+                <select class="field-select" id="cfg-voice-mode" style="width: auto; min-width: 190px; padding: 0.4rem 0.75rem;">
+                    <option value="default" selected>Default voices</option>
+                    <option value="auto">Auto-pick distinct voices</option>
+                </select>
+            </div>
             <!-- Preset Info Badge -->
-            <div id="preset-info-badge" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; padding: 0.65rem 1rem; border-radius: 12px; background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255,255,255,0.06); font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+            <div id="preset-info-badge" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; padding: 0.65rem 1rem; border-radius: 12px; background: #f2f0e8; border: 1px dashed var(--border); font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
                 <!-- Dynamic text populated by JS -->
             </div>
         </div>
 
         <!-- Bring Your Own Prompts (BYOP) Glassmorphic Card -->
-        <div class="byop-card" style="width: 100%; background: var(--surface); backdrop-filter: blur(24px); border: 1px solid var(--border); border-radius: 24px; padding: 1.5rem; box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.8); display: flex; flex-direction: column; gap: 1.25rem; transition: border-color 0.3s, box-shadow 0.3s;">
+        <div class="byop-card" style="display: flex; flex-direction: column; gap: 1.25rem; transition: border-color 0.3s, box-shadow 0.3s;">
             <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none;" onclick="toggleBYOP()">
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(139, 92, 246, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent);">
+                    <div style="width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; color: var(--accent);">
                         <i data-lucide="sliders" style="width: 18px; height: 18px;"></i>
                     </div>
                     <div style="text-align: left;">
-                        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #f8fafc 60%, #a78bfa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Customize Pipeline Prompts</h3>
+                        <h3 style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700; color: var(--text-main);">Customize Pipeline Prompts</h3>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem;">Bring your own custom prompt templates (BYOP)</p>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
                     <label class="switch" style="position: relative; display: inline-block; width: 44px; height: 24px; margin: 0;" onclick="event.stopPropagation()">
                         <input type="checkbox" id="byop-enable" onchange="onBYOPToggle()" style="opacity: 0; width: 0; height: 0;">
-                        <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: rgba(255,255,255,0.08); border: 1px solid var(--border); transition: .3s; border-radius: 24px;"></span>
+                        <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: #e4e0d5; border: 1px solid var(--border); transition: .3s; border-radius: 24px;"></span>
                     </label>
                     <i data-lucide="chevron-down" id="byop-arrow" style="width: 16px; height: 16px; color: var(--text-muted); transition: transform 0.25s;"></i>
                 </div>
             </div>
 
             <div id="byop-content" style="max-height: 0; overflow: hidden; transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; gap: 1.25rem;">
-                <div style="padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.04); display: flex; flex-direction: column; gap: 1.25rem; text-align: left;">
+                <div style="padding-top: 0.75rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 1.25rem; text-align: left;">
                     <!-- Screenplay Override -->
                     <div class="field-group">
                         <div style="display: flex; align-items: center; justify-content: justify-content; margin-bottom: 0.2rem; justify-content: space-between;">
-                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">1. Creative Screenplay Prompt</label>
+                            <label class="field-label" style="font-size: 0.75rem; color: var(--accent); margin: 0;">1. Creative Screenplay Prompt</label>
                             <button class="byop-reset-btn" onclick="resetBYOP('screenplay')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
                         </div>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls character depth, dialogues, pacing and story-splits. We'll automatically append the strict pipeline JSON formatting spec.</p>
-                        <textarea class="field-input" id="byop-screenplay" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                        <textarea class="field-input" id="byop-screenplay" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical;"></textarea>
                     </div>
 
                     <!-- Character Generation Override -->
                     <div class="field-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
-                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">2. Character Casting & Bible Prompt</label>
+                            <label class="field-label" style="font-size: 0.75rem; color: var(--accent); margin: 0;">2. Character Casting & Bible Prompt</label>
                             <button class="byop-reset-btn" onclick="resetBYOP('character')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
                         </div>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls character visual extraction, chronological attire locking, and portrait style conversion. We'll automatically append the pipeline JSON structure.</p>
-                        <textarea class="field-input" id="byop-character" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                        <textarea class="field-input" id="byop-character" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical;"></textarea>
                     </div>
 
                     <!-- Grid Override -->
                     <div class="field-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
-                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">3. Storyboard Grid Prompt</label>
+                            <label class="field-label" style="font-size: 0.75rem; color: var(--accent); margin: 0;">3. Storyboard Grid Prompt</label>
                             <button class="byop-reset-btn" onclick="resetBYOP('grid')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
                         </div>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Controls panel continuity, multi-layered visual Z-blocking, camera setups, and headroom. We'll automatically append the panels list.</p>
-                        <textarea class="field-input" id="byop-grid" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                        <textarea class="field-input" id="byop-grid" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical;"></textarea>
                     </div>
 
                     <!-- Judge Override -->
                     <div class="field-group">
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.2rem;">
-                            <label class="field-label" style="font-size: 0.75rem; color: #a78bfa; margin: 0;">4. Visual Continuity Judge Prompt</label>
+                            <label class="field-label" style="font-size: 0.75rem; color: var(--accent); margin: 0;">4. Visual Continuity Judge Prompt</label>
                             <button class="byop-reset-btn" onclick="resetBYOP('judge')" style="background: transparent; border: none; color: var(--accent); font-size: 0.65rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; opacity: 0.8; transition: opacity 0.2s;"><i data-lucide="rotate-ccw" style="width: 10px; height: 10px;"></i> Reset</button>
                         </div>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; line-height: 1.3;">Instructs the Vision LLM Judge how to audit storyboard assets for identity, costumes, props, and temporal drift.</p>
-                        <textarea class="field-input" id="byop-judge" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical; background: rgba(15, 23, 42, 0.6);"></textarea>
+                        <textarea class="field-input" id="byop-judge" style="height: 120px; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: vertical;"></textarea>
                     </div>
                 </div>
             </div>
@@ -600,7 +625,7 @@
                 <div class="field-group">
                     <label class="field-label">Image Engine</label>
                     <select class="field-select" id="cfg-img-engine">
-                        <option value="">Config default (config.ini)</option>
+                        <option value="">Default</option>
                         <option value="fal/z-image" selected>fal/z-image</option>
                         <option value="fal/gpt">fal/gpt</option>
                         <option value="fal/sd">fal/sd</option>
@@ -611,18 +636,32 @@
                 <div class="field-group">
                     <label class="field-label">Visual Engine</label>
                     <select class="field-select" id="cfg-visual-engine">
-                        <option value="" selected>Config default (config.ini)</option>
-                        <option value="remotion">Remotion (default)</option>
-                        <option value="lottie">Lottie 2D Rig (Beta)</option>
+                        <option value="" selected>Default (Image)</option>
+                        <option value="image">Image</option>
+                        <option value="lottie">Lottie (Beta)</option>
                     </select>
                 </div>
                 <div class="field-group">
-                    <label class="field-label">Voice ID</label>
-                    <select class="field-select" id="cfg-voice-id">
-                        <option value="">Config default (config.ini)</option>
-                        <option value="gtts" selected>GTTS (Standard Audio)</option>
-                        <option value="Fenrir">Fenrir (Premium UGC)</option>
+                    <label class="field-label">Render Engine</label>
+                    <select class="field-select" id="cfg-render-engine">
+                        <option value="">Default</option>
+                        <option value="remotion">Remotion (AWS Lambda)</option>
+                        <option value="ffmpeg">FFmpeg (fast local draft)</option>
                     </select>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Default / Narrator Voice</label>
+                    <select class="field-select" id="cfg-voice-id">
+                        <option value="">Default</option>
+                        <option value="gtts" selected>gtts · Google TTS</option>
+                        <option value="Fenrir">Fenrir · Gemini voice</option>
+                    </select>
+                    <div id="voice-catalog-status" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem;">Loading available voices…</div>
+                </div>
+                <div class="field-group" style="grid-column: span 2;">
+                    <label class="field-label" for="cfg-character-voices">Character voice assignments (optional)</label>
+                    <textarea class="field-input" id="cfg-character-voices" placeholder='{"Asha": "voice-id-1", "Ravi": "voice-id-2"}' style="height: 82px; font-family: monospace; font-size: 0.8rem; resize: vertical;"></textarea>
+                    <div id="voice-catalog-list" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.5;">Use exact character names from the story and voice IDs listed here. Manual assignments take priority; Auto-pick fills characters you leave unmapped.</div>
                 </div>
                 <div class="field-group">
                     <label class="field-label">Target Runtime (sec)</label>
@@ -644,10 +683,11 @@
                     </label>
                 </div>
                 <div class="field-group">
-                    <label class="checkbox-group">
+                    <label class="checkbox-group" id="upscale-crops-group">
                         <input type="checkbox" id="cfg-upscale-crops" checked>
                         <span class="checkbox-label">Upscale Grid Crops</span>
                     </label>
+                    <div id="upscale-crops-note" style="font-size: 0.72rem; color: var(--text-muted); margin: 0.2rem 0 0 1.5rem;">Requires One-Shot Image Grid.</div>
                 </div>
                 <div class="field-group" style="grid-column: span 2;">
                     <label class="field-label">Style reference is attached from the prompt box (paperclip icon). Leave empty for text-style only.</label>
@@ -686,7 +726,7 @@
             }
         }
 
-        const STAGE_BY_MODE = { review: 0, prompts: 2, auto: 4 };
+        const STAGE_BY_MODE = { review: 0, prompts: 2, auto: 5 };
 
         const IS_LOCAL_HOST = ['localhost', '127.0.0.1', '[::1]'].indexOf(
             window.location.hostname
@@ -769,9 +809,98 @@
             document.getElementById('cfg-style-ref-file').click();
         });
 
+        function syncGridUpscaleOptions() {
+            const useGrid = document.getElementById('cfg-use-grid').checked;
+            const upscale = document.getElementById('cfg-upscale-crops');
+            const group = document.getElementById('upscale-crops-group');
+            const note = document.getElementById('upscale-crops-note');
+            if (!useGrid) upscale.checked = false;
+            upscale.disabled = !useGrid;
+            group.style.opacity = useGrid ? '1' : '0.5';
+            note.textContent = useGrid
+                ? 'Requires One-Shot Image Grid.'
+                : 'Unavailable because One-Shot Image Grid is off.';
+        }
+
+        document.getElementById('cfg-use-grid').addEventListener('change', syncGridUpscaleOptions);
+        syncGridUpscaleOptions();
+
+        async function loadVoiceCatalog() {
+            const select = document.getElementById('cfg-voice-id');
+            const status = document.getElementById('voice-catalog-status');
+            const catalog = document.getElementById('voice-catalog-list');
+            try {
+                const response = await fetch('/voices');
+                if (!response.ok) {
+                    throw new Error(`Voice catalog request failed (${response.status})`);
+                }
+                const voices = await response.json();
+                if (!Array.isArray(voices)) {
+                    throw new Error('Voice catalog response was not a list');
+                }
+                const selectedVoice = select.value;
+
+                const available = new Map(
+                    voices
+                        .filter(voice => voice && voice.id)
+                        .map(voice => [String(voice.id), voice])
+                );
+                const fallbackVoices = [
+                    { id: 'gtts', voice_name: 'Google TTS', tts_toolkit: 'gtts' },
+                    { id: 'Fenrir', voice_name: 'Fenrir', tts_toolkit: 'gemini' }
+                ];
+                fallbackVoices.forEach(voice => {
+                    if (!available.has(voice.id)) available.set(voice.id, voice);
+                });
+
+                select.replaceChildren(new Option('Default', ''));
+                for (const voice of available.values()) {
+                    const toolkit = voice.tts_toolkit ? ` · ${voice.tts_toolkit}` : '';
+                    const option = new Option(
+                        `${voice.voice_name || voice.id}${toolkit} (${voice.id})`,
+                        voice.id
+                    );
+                    select.add(option);
+                }
+                select.value = [...select.options].some(option => option.value === selectedVoice)
+                    ? selectedVoice
+                    : '';
+
+                const catalogEntries = [...available.values()].map(voice => {
+                    const label = voice.voice_name || voice.id;
+                    return {
+                        label: `${label}${voice.tts_toolkit ? ` (${voice.tts_toolkit})` : ''}: `,
+                        id: voice.id
+                    };
+                });
+                status.textContent = `${voices.length} voice${voices.length === 1 ? '' : 's'} available; choose one above or use per-character assignments.`;
+                catalog.replaceChildren();
+                catalog.append(document.createTextNode(
+                    'Use exact character names from the story and voice IDs listed here. Manual assignments take priority; Auto-pick fills characters you leave unmapped. '
+                ));
+                catalogEntries.forEach((entry, index) => {
+                    if (index) catalog.append(document.createTextNode(' · '));
+                    const item = document.createElement('span');
+                    item.append(document.createTextNode(entry.label));
+                    const id = document.createElement('code');
+                    id.textContent = entry.id;
+                    item.append(id);
+                    catalog.append(item);
+                });
+            } catch (error) {
+                status.textContent = `Could not load voice catalog: ${error.message}`;
+                status.style.color = '#b91c1c';
+            }
+        }
+
+        loadVoiceCatalog();
+
         if (IS_LOCAL_HOST) {
             document.getElementById('cfg-img-engine').value = CONFIG_DEFAULT;
             document.getElementById('cfg-voice-id').value = CONFIG_DEFAULT;
+            document.getElementById('cfg-render-engine').value = 'ffmpeg';
+        } else {
+            document.getElementById('cfg-render-engine').value = 'remotion';
         }
 
         function onPresetChange() {
@@ -828,6 +957,7 @@
                 // Hide badge
                 badge.style.display = 'none';
             }
+            syncGridUpscaleOptions();
             if (window.lucide) lucide.createIcons();
         }
 
@@ -897,7 +1027,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
 
             if (isEnabled) {
                 card.style.borderColor = "var(--accent)";
-                card.style.boxShadow = "0 30px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(139, 92, 246, 0.2)";
+                card.style.boxShadow = "0 8px 24px rgba(17, 17, 17, 0.05), 0 0 0 2px rgba(0, 65, 202, 0.1)";
 
                 // Automatically expand when enabled
                 if (!byopExpanded) {
@@ -905,7 +1035,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
                 }
             } else {
                 card.style.borderColor = "var(--border)";
-                card.style.boxShadow = "0 30px 60px -15px rgba(0, 0, 0, 0.8)";
+                card.style.boxShadow = "0 8px 24px rgba(17, 17, 17, 0.05)";
             }
         }
 
@@ -955,7 +1085,7 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
 
                     // Show premium glassmorphic alert notification
                     const alertDiv = document.createElement('div');
-                    alertDiv.style = "position: fixed; top: 20px; right: 20px; background: rgba(139, 92, 246, 0.9); backdrop-filter: blur(12px); border: 1px solid var(--accent); border-radius: 12px; padding: 1rem; color: white; z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; transition: opacity 0.5s;";
+                    alertDiv.style = "position: fixed; top: 20px; right: 20px; background: var(--accent); border: 1px solid var(--ink); border-radius: 12px; padding: 1rem; color: white; z-index: 10000; box-shadow: 0 8px 20px rgba(17,17,17,0.12); font-family: 'Outfit', sans-serif; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; transition: opacity 0.5s;";
                     alertDiv.innerHTML = `<i data-lucide="sparkles" style="width: 16px; height: 16px;"></i> Loaded prompt overrides: <strong>${overrideName}</strong>`;
                     document.body.appendChild(alertDiv);
                     if (window.lucide) lucide.createIcons();
@@ -1011,6 +1141,25 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             const ideaId = document.getElementById('cfg-idea-id').value.trim() || generateUUID();
             const imgEngine = document.getElementById('cfg-img-engine').value;
             const voiceId = document.getElementById('cfg-voice-id').value;
+            const autoVoiceMode = document.getElementById('cfg-voice-mode').value === 'auto';
+            const characterVoiceMapText = document.getElementById('cfg-character-voices').value.trim();
+            let characterVoiceMap = null;
+            if (characterVoiceMapText) {
+                try {
+                    characterVoiceMap = JSON.parse(characterVoiceMapText);
+                    if (!characterVoiceMap || Array.isArray(characterVoiceMap) || typeof characterVoiceMap !== 'object') {
+                        throw new Error('Expected a JSON object mapping character names to voice IDs.');
+                    }
+                    if (Object.entries(characterVoiceMap).some(([name, id]) =>
+                        !name.trim() || typeof id !== 'string' || !id.trim()
+                    )) {
+                        throw new Error('Each entry needs a character name and a non-empty voice ID.');
+                    }
+                } catch (error) {
+                    alert(`Invalid character voice assignments: ${error.message}`);
+                    return;
+                }
+            }
 
             const mode = document.getElementById('workflow-mode').value;
             const visualEngine = document.getElementById('cfg-visual-engine').value;
@@ -1038,8 +1187,16 @@ Analyze the provided storyboard grid image and its corresponding story script. Y
             };
 
             if (imgEngine) payload.image_engine = imgEngine;
-            if (voiceId) payload.voice_id = voiceId;
+            if (voiceId && !autoVoiceMode) payload.voice_id = voiceId;
+            if (characterVoiceMap) payload.voice_character_map = characterVoiceMap;
             if (visualEngine) payload.visual_engine = visualEngine;
+
+            const renderEngine = document.getElementById('cfg-render-engine').value;
+            if (renderEngine) payload.render_engine = renderEngine;
+
+            if (autoVoiceMode) {
+                payload.auto_voices = true;
+            }
 
             const durationSec = parseFloat(document.getElementById('cfg-duration').value);
             if (!isNaN(durationSec) && durationSec > 0) payload.duration = durationSec;
